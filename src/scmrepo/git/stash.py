@@ -33,7 +33,7 @@ class Stash:
         self, message: Optional[str] = None, include_untracked: bool = False
     ) -> Optional[str]:
         logger.debug("Stashing changes in '%s'", self.ref)
-        rev, reset = self.scm._stash_push(  # pylint: disable=protected-access
+        rev, reset = self.scm._stash_push(
             self.ref, message=message, include_untracked=include_untracked
         )
         if not rev:
@@ -74,7 +74,7 @@ class Stash:
                 fail if any conflicts are found.
         """
         logger.debug("Applying stash commit '%s'", rev)
-        self.scm._stash_apply(  # pylint: disable=protected-access
+        self.scm._stash_apply(
             rev, reinstate_index=reinstate_index, skip_conflicts=skip_conflicts
         )
 
@@ -82,7 +82,7 @@ class Stash:
         if index < 0 or index >= len(self):
             raise SCMError(f"Invalid stash ref '{self.ref}@{{{index}}}'")
         logger.debug("Dropping '%s@{%d}'", self.ref, index)
-        self.scm._stash_drop(self.ref, index)  # pylint: disable=protected-access
+        self.scm._stash_drop(self.ref, index)
 
     def clear(self):
         logger.debug("Clear stash '%s'", self.ref)

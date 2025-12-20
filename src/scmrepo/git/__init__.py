@@ -17,10 +17,10 @@ from typing import (
     Union,
 )
 
-from funcy import cached_property, first
 from pathspec.patterns import GitWildMatchPattern
 
 from scmrepo.base import Base
+from scmrepo.compat import cached_property
 from scmrepo.exceptions import FileNotInRepoError, GitHookAlreadyExists, RevError
 from scmrepo.utils import relpath
 
@@ -28,7 +28,7 @@ from .backend.base import BaseGitBackend, NoGitBackendError, SyncStatus
 from .backend.dulwich import DulwichBackend
 from .backend.gitpython import GitPythonBackend
 from .backend.pygit2 import Pygit2Backend
-from .objects import (  # noqa: F401, pylint: disable=unused-import
+from .objects import (  # noqa: F401
     GitCommit,
     GitObject,
     GitTag,
@@ -86,7 +86,7 @@ class GitBackends(Mapping):
 
     def reset_all(self) -> None:
         for backend in self.initialized.values():
-            backend._reset()  # pylint: disable=protected-access
+            backend._reset()
 
     def move_to_end(self, key: str, last: bool = True):
         if key not in _LOW_PRIO_BACKENDS:
@@ -104,7 +104,8 @@ class Git(Base):
 
     def __init__(self, *args, backends: Optional[Iterable[str]] = None, **kwargs):
         self.backends = GitBackends(backends, *args, **kwargs)
-        first_ = first(self.backends.values())
+        first_ = next(iter(self.backends.values()), None)
+        assert first_
         super().__init__(first_.root_dir)
         self._last_backend: Optional[str] = None
 
@@ -423,7 +424,7 @@ class Git(Base):
         commit = self.resolve_commit(branch)
         while commit is not None:
             yield commit.hexsha
-            parent = first(commit.parents)
+            parent = next(iter(commit.parents), None)
             if parent is None or parent == end_rev:
                 return
             commit = self.resolve_commit(parent)

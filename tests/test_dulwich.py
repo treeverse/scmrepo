@@ -1,8 +1,11 @@
 import os
 import socket
 import threading
+import time
+from collections.abc import Callable
 from io import StringIO
-from typing import Any
+from time import perf_counter
+from typing import Any, TypeVar
 from unittest.mock import AsyncMock
 
 import asyncssh
@@ -10,12 +13,11 @@ import paramiko
 import pytest
 from paramiko.server import InteractiveQuery
 from pytest_mock import MockerFixture
-from pytest_test_utils.waiters import wait_until
 
 from scmrepo.exceptions import AuthError
 from scmrepo.git.backend.dulwich.asyncssh_vendor import AsyncSSHVendor
 
-# pylint: disable=redefined-outer-name
+_T = TypeVar("_T")
 
 
 USER = "testuser"
@@ -89,6 +91,16 @@ class Server(paramiko.ServerInterface):
 
     def get_allowed_auths(self, username):
         return self.allowed_auths
+
+
+def wait_until(pred: Callable[[], _T], timeout: float, pause: float = 1) -> _T:
+    start = perf_counter()
+    while (perf_counter() - start) < timeout:
+        value = pred()
+        if value:
+            return value
+        time.sleep(pause)
+    raise TimeoutError("Timeout reached while waiting")
 
 
 @pytest.fixture

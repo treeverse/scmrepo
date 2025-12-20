@@ -1,13 +1,11 @@
+import pathlib
 from unittest.mock import MagicMock
-
-from pytest_test_utils import TmpDir
-from pytest_test_utils.matchers import Matcher
 
 from scmrepo.git import Git
 from scmrepo.progress import GitProgressEvent
 
 
-def test_clone(tmp_dir: TmpDir, matcher: type[Matcher]):
+def test_clone(tmp_dir: pathlib.Path):
     progress = MagicMock()
     url = "https://github.com/treeverse/dvcyaml-schema"
     rev = "cf279597596b54c5b0ce089eb4bda41ebbbb5db4"
@@ -15,11 +13,13 @@ def test_clone(tmp_dir: TmpDir, matcher: type[Matcher]):
     repo = Git.clone(url, "dir", rev=rev, progress=progress)
     assert repo.get_rev() == rev
 
-    progress.assert_called_with(matcher.instance_of(GitProgressEvent))
+    ((event,), kw) = progress.call_args
+    assert not kw
+    assert isinstance(event, GitProgressEvent)
     assert (tmp_dir / "dir").exists()
 
 
-def test_clone_shallow(tmp_dir: TmpDir):
+def test_clone_shallow(tmp_dir: pathlib.Path):
     url = "https://github.com/treeverse/dvcyaml-schema"
     shallow_branch = "master"
 

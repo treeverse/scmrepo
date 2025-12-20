@@ -23,7 +23,6 @@ def bytesio_len(obj: "BytesIO") -> Optional[int]:
 
 
 class GitFileSystem(AbstractFileSystem):
-    # pylint: disable=abstract-method
     cachable = False
     root_marker = "/"
 
@@ -152,7 +151,6 @@ class GitFileSystem(AbstractFileSystem):
 
     @classmethod
     def overlaps(cls, left, right):
-        # pylint: disable=arguments-out-of-order
         return cls.isin_or_eq(left, right) or cls.isin(right, left)
 
     def relpath(self, path, start=None):

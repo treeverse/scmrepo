@@ -1,6 +1,10 @@
 import os
+import pathlib
+import posixpath
 import shutil
 import time
+from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -13,8 +17,6 @@ from proxy import TestCase as ProxyTestCase
 from pygit2 import GitError
 from pygit2.remotes import Remote
 from pytest_mock import MockerFixture
-from pytest_test_utils import TempDirFactory, TmpDir
-from pytest_test_utils.matchers import Matcher
 
 from scmrepo.exceptions import (
     InvalidRemote,
@@ -27,9 +29,6 @@ from scmrepo.git.objects import GitTag
 
 from .conftest import backends
 
-# pylint: disable=redefined-outer-name,unused-argument,protected-access
-
-
 BAD_PROXY_CONFIG = """[http]
 proxy = "http://bad-proxy.dvc.org"
 [https]
@@ -37,8 +36,20 @@ proxy = "http://bad-proxy.dvc.org"
 """
 
 
+@dataclass(init=False)
+class unordered:  # noqa: N801, PLW1641
+    items: Iterable
+
+    def __init__(self, *items: object) -> None:
+        self.items = items
+
+    def __eq__(self, other: object) -> bool:
+        assert isinstance(other, Iterable)
+        return sorted(self.items) == sorted(other)
+
+
 @pytest.fixture
-def submodule_dir(tmp_dir: TmpDir, scm: Git):
+def submodule_dir(tmp_dir: pathlib.Path, scm: Git):
     scm.commit("init")
 
     subrepo = GitPythonRepo.init()
@@ -49,7 +60,7 @@ def submodule_dir(tmp_dir: TmpDir, scm: Git):
     return tmp_dir / subrepo_path
 
 
-def test_git_init(tmp_dir: TmpDir, git_backend: str):
+def test_git_init(tmp_dir: pathlib.Path, git_backend: str):
     Git.init(".", _backend=git_backend)
     assert (tmp_dir / ".git").is_dir()
 
@@ -57,7 +68,7 @@ def test_git_init(tmp_dir: TmpDir, git_backend: str):
         Git(tmp_dir, backends=[backend])
 
 
-def test_git_init_bare(tmp_dir: TmpDir, git_backend: str):
+def test_git_init_bare(tmp_dir: pathlib.Path, git_backend: str):
     Git.init(".", bare=True, _backend=git_backend)
     assert list(tmp_dir.iterdir())
 
@@ -65,7 +76,7 @@ def test_git_init_bare(tmp_dir: TmpDir, git_backend: str):
         Git(tmp_dir, backends=[backend])
 
 
-def test_git_submodule(submodule_dir: TmpDir, git_backend: str):
+def test_git_submodule(submodule_dir: pathlib.Path, git_backend: str):
     git = Git(backends=[git_backend])
     git.close()
 
@@ -74,8 +85,8 @@ def test_git_submodule(submodule_dir: TmpDir, git_backend: str):
 
 
 @pytest.mark.skip_git_backend("pygit2")
-def test_commit(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"foo": "foo"})
+def test_commit(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "foo").write_bytes(b"foo")
     git.add(["foo"])
     git.commit("add")
     assert "foo" in scm.gitpython.git.ls_files()
@@ -83,9 +94,9 @@ def test_commit(tmp_dir: TmpDir, scm: Git, git: Git):
 
 @pytest.mark.skip_git_backend("pygit2")
 def test_commit_in_root_repo_with_submodule(
-    tmp_dir: TmpDir, scm: Git, git: Git, submodule_dir: TmpDir
+    tmp_dir: pathlib.Path, scm: Git, git: Git, submodule_dir: pathlib.Path
 ):
-    tmp_dir.gen("foo", "foo")
+    (tmp_dir / "foo").write_bytes(b"foo")
     git.add(["foo"])
     git.commit("add foo")
     assert "foo" in scm.gitpython.git.ls_files()
@@ -105,15 +116,16 @@ def test_belongs_to_scm(scm: Git, git: Git, path: str, expected: str):
 
 
 @pytest.mark.skip_git_backend("pygit2")
-def test_is_tracked(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen(
-        {
-            "tracked": "tracked",
-            "dir": {"data": "data", "subdir": {"subdata": "subdata"}},
-        },
-    )
+def test_is_tracked(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "tracked").write_bytes(b"tracked")
+    (tmp_dir / "dir" / "subdir").mkdir(parents=True, exist_ok=True)
+    (tmp_dir / "dir" / "data").write_bytes(b"data")
+    (tmp_dir / "dir" / "subdir" / "subdata").write_bytes(b"subdata")
+
     scm.add_commit(["tracked", "dir"], message="add dirs and files")
-    tmp_dir.gen({"untracked": "untracked", "dir": {"untracked": "untracked"}})
+
+    (tmp_dir / "untracked").write_bytes(b"untracked")
+    (tmp_dir / "dir" / "untracked").write_bytes(b"untracked")
 
     # sanity check
     assert (tmp_dir / "untracked").exists()
@@ -133,10 +145,10 @@ def test_is_tracked(tmp_dir: TmpDir, scm: Git, git: Git):
 
 
 @pytest.mark.skip_git_backend("pygit2")
-def test_is_tracked_unicode(tmp_dir: TmpDir, scm: Git, git: Git):
-    files = tmp_dir.gen("ṭṝḁḉḵḗḋ", "tracked")
-    scm.add_commit(files, message="add unicode")
-    tmp_dir.gen("ṳṋṭṝḁḉḵḗḋ", "untracked")
+def test_is_tracked_unicode(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "ṭṝḁḉḵḗḋ").write_bytes(b"tracked")
+    scm.add_commit([os.fspath(tmp_dir / "ṭṝḁḉḵḗḋ")], message="add unicode")
+    (tmp_dir / "ṳṋṭṝḁḉḵḗḋ").write_bytes(b"untracked")
 
     assert git.is_tracked("ṭṝḁḉḵḗḋ")
     assert not git.is_tracked("ṳṋṭṝḁḉḵḗḋ")
@@ -144,7 +156,8 @@ def test_is_tracked_unicode(tmp_dir: TmpDir, scm: Git, git: Git):
 
 @pytest.mark.skip_git_backend("pygit2")
 def test_is_tracked_func(tmp_dir, scm, git):
-    tmp_dir.gen({"foo": "foo", "тест": "проверка"})
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "тест").write_text("проверка", encoding="utf-8")
     scm.add(["foo", "тест"])
 
     abs_foo = os.path.abspath("foo")
@@ -163,19 +176,19 @@ def test_is_tracked_func(tmp_dir, scm, git):
 
 
 @pytest.mark.skip_git_backend("pygit2")
-def test_no_commits(tmp_dir: TmpDir, scm: Git, git: Git):
+def test_no_commits(tmp_dir: pathlib.Path, scm: Git, git: Git):
     assert git.no_commits
 
-    tmp_dir.gen("foo", "foo")
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit(["foo"], message="foo")
 
     assert not git.no_commits
 
 
 @pytest.mark.skip_git_backend("dulwich")
-def test_branch_revs(tmp_dir: TmpDir, scm: Git, git: Git):
+def test_branch_revs(tmp_dir: pathlib.Path, scm: Git, git: Git):
     def _gen(i: int):
-        tmp_dir.gen({"file": f"{i}"})
+        (tmp_dir / "file").write_text(f"{i}", encoding="utf-8")
         scm.add_commit("file", message=f"{i}")
         return scm.get_rev()
 
@@ -184,12 +197,12 @@ def test_branch_revs(tmp_dir: TmpDir, scm: Git, git: Git):
     assert branch_revs == others
 
 
-def test_set_ref(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen("file", "0")
+def test_set_ref(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "file").write_bytes(b"0")
     scm.add_commit("file", message="init")
     init_rev = scm.get_rev()
 
-    tmp_dir.gen({"file": "1"})
+    (tmp_dir / "file").write_bytes(b"1")
     scm.add_commit("file", message="commit")
     commit_rev = scm.get_rev()
 
@@ -207,16 +220,19 @@ def test_set_ref(tmp_dir: TmpDir, scm: Git, git: Git):
     ).read_text().strip() == "ref: refs/heads/master"
 
 
-def test_get_ref(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"file": "0"})
+def _write_loose_ref(scm: Git, ref: str, rev: str) -> None:
+    path = pathlib.Path(scm.dir, "refs", *posixpath.split(ref))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(rev, encoding="utf-8")
+
+
+def test_get_ref(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "file").write_bytes(b"0")
     scm.add_commit("file", message="init")
     init_rev = scm.get_rev()
-    tmp_dir.gen(
-        {
-            os.path.join(".git", "refs", "foo", "bar"): init_rev,
-            os.path.join(".git", "refs", "foo", "baz"): "ref: refs/heads/master",
-        }
-    )
+
+    _write_loose_ref(scm, "foo/bar", init_rev)
+    _write_loose_ref(scm, "foo/baz", "ref: refs/heads/master")
     scm.tag("annotated", annotated=True, message="Annotated Tag")
 
     assert init_rev == git.get_ref("refs/foo/bar")
@@ -227,16 +243,16 @@ def test_get_ref(tmp_dir: TmpDir, scm: Git, git: Git):
     assert git.get_ref("refs/foo/qux") is None
 
 
-def test_remove_ref(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"file": "0"})
+def test_remove_ref(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "file").write_bytes(b"0")
     scm.add_commit("file", message="init")
     init_rev = scm.get_rev()
 
     # remove nonexistent ref should silently pass when old_ref is None)
     git.remove_ref("refs/foo/bar", old_ref=None)
 
-    tmp_dir.gen(os.path.join(".git", "refs", "foo", "bar"), init_rev)
-    tmp_dir.gen({"file": "1"})
+    _write_loose_ref(scm, "foo/bar", init_rev)
+    (tmp_dir / "file").write_bytes(b"1")
     scm.add_commit("file", message="commit")
     commit_rev = scm.get_rev()
 
@@ -247,17 +263,13 @@ def test_remove_ref(tmp_dir: TmpDir, scm: Git, git: Git):
 
 
 @pytest.mark.skip_git_backend("dulwich")
-def test_refs_containing(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"file": "0"})
+def test_refs_containing(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "file").write_bytes(b"0")
     scm.add_commit("file", message="init")
     init_rev = scm.get_rev()
-    tmp_dir.gen(
-        {
-            os.path.join(".git", "refs", "foo", "bar"): init_rev,
-            os.path.join(".git", "refs", "foo", "baz"): init_rev,
-        }
-    )
 
+    _write_loose_ref(scm, "foo/bar", init_rev)
+    _write_loose_ref(scm, "foo/baz", init_rev)
     expected = {"refs/foo/bar", "refs/foo/baz", "refs/heads/master"}
     assert expected == set(git.get_refs_containing(init_rev))
 
@@ -265,15 +277,15 @@ def test_refs_containing(tmp_dir: TmpDir, scm: Git, git: Git):
 @pytest.mark.skip_git_backend("pygit2", "gitpython")
 @pytest.mark.parametrize("use_url", [True, False])
 def test_push_refspecs(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
-    remote_git_dir: TmpDir,
+    remote_git_dir: pathlib.Path,
     use_url: str,
 ):
     from scmrepo.git.backend.dulwich import SyncStatus
 
-    tmp_dir.gen({"file": "0"})
+    (tmp_dir / "file").write_bytes(b"0")
     scm.add_commit("file", message="init")
     init_rev = scm.get_rev()
     scm.add_commit("file", message="bar")
@@ -281,12 +293,9 @@ def test_push_refspecs(
     scm.checkout(init_rev)
     scm.add_commit("file", message="baz")
     baz_rev = scm.get_rev()
-    tmp_dir.gen(
-        {
-            os.path.join(".git", "refs", "foo", "bar"): bar_rev,
-            os.path.join(".git", "refs", "foo", "baz"): baz_rev,
-        }
-    )
+
+    _write_loose_ref(scm, "foo/bar", bar_rev)
+    _write_loose_ref(scm, "foo/baz", baz_rev)
 
     url = f"file://{remote_git_dir.resolve().as_posix()}"
     remote_scm = Git(remote_git_dir)
@@ -327,10 +336,10 @@ def test_push_refspecs(
 @pytest.mark.skip_git_backend("gitpython")
 @pytest.mark.parametrize("use_url", [True, False])
 def test_fetch_refspecs(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
-    remote_git_dir: TmpDir,
+    remote_git_dir: pathlib.Path,
     use_url: bool,
     mocker: MockerFixture,
 ):
@@ -339,7 +348,7 @@ def test_fetch_refspecs(
     url = f"file://{remote_git_dir.resolve().as_posix()}"
     scm.gitpython.repo.create_remote("origin", url)
     remote_scm = Git(remote_git_dir)
-    remote_git_dir.gen("file", "0")
+    (remote_git_dir / "file").write_text("0")
 
     remote_scm.add_commit("file", message="init")
     init_rev = remote_scm.get_rev()
@@ -348,12 +357,9 @@ def test_fetch_refspecs(
     remote_scm.checkout(init_rev)
     remote_scm.add_commit("file", message="baz")
     baz_rev = remote_scm.get_rev()
-    remote_git_dir.gen(
-        {
-            os.path.join(".git", "refs", "foo", "bar"): bar_rev,
-            os.path.join(".git", "refs", "foo", "baz"): baz_rev,
-        }
-    )
+
+    _write_loose_ref(remote_scm, "foo/bar", bar_rev)
+    _write_loose_ref(remote_scm, "foo/baz", baz_rev)
 
     with pytest.raises(SCMError):
         git.fetch_refspecs("bad-remote", "refs/foo/bar:refs/foo/bar")
@@ -388,18 +394,18 @@ def test_fetch_refspecs(
 @pytest.mark.skip_git_backend("pygit2", "gitpython")
 @pytest.mark.parametrize("use_url", [True, False])
 def test_iter_remote_refs(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
-    remote_git_dir: TmpDir,
-    tmp_dir_factory: TempDirFactory,
+    remote_git_dir: pathlib.Path,
+    tmp_path_factory: pytest.TempPathFactory,
     use_url: bool,
 ):
     url = f"file://{remote_git_dir.resolve().as_posix()}"
 
     scm.gitpython.repo.create_remote("origin", url)
     remote_scm = Git(remote_git_dir)
-    remote_git_dir.gen("file", "0")
+    (remote_git_dir / "file").write_text("0")
     remote_scm.add_commit("file", message="init")
     remote_scm.branch("new-branch")
     remote_scm.add_commit("file", message="bar")
@@ -409,7 +415,7 @@ def test_iter_remote_refs(
     with pytest.raises(InvalidRemote):
         set(git.iter_remote_refs("bad-remote"))
 
-    tmp_directory = tmp_dir_factory.mktemp("not_a_git_repo")
+    tmp_directory = tmp_path_factory.mktemp("not_a_git_repo")
     remote = f"file://{tmp_directory.as_posix()}"
     with pytest.raises(InvalidRemote):
         set(git.iter_remote_refs(remote))
@@ -433,7 +439,11 @@ def _gen(scm: Git, s: str, commit_timestamp: Optional[float] = None) -> str:
     return scm.get_rev()
 
 
-def test_list_all_commits(tmp_dir: TmpDir, scm: Git, git: Git, matcher: type[Matcher]):
+def test_list_all_commits(
+    tmp_dir: pathlib.Path,
+    scm: Git,
+    git: Git,
+):
     assert git.list_all_commits() == []
     # https://github.com/libgit2/libgit2/issues/6336
     now = time.time()
@@ -450,7 +460,9 @@ def test_list_all_commits(tmp_dir: TmpDir, scm: Git, git: Git, matcher: type[Mat
 
 
 def test_list_all_commits_branch(
-    tmp_dir: TmpDir, scm: Git, git: Git, matcher: type[Matcher]
+    tmp_dir: pathlib.Path,
+    scm: Git,
+    git: Git,
 ):
     revs = {}
     now = time.time()
@@ -489,14 +501,14 @@ def test_list_all_commits_branch(
     ]
 
 
-def test_list_all_tags(tmp_dir: TmpDir, scm: Git, git: Git, matcher: type[Matcher]):
+def test_list_all_tags(tmp_dir: pathlib.Path, scm: Git, git: Git):
     rev_a = _gen(scm, "a")
     scm.tag("tag")
     rev_b = _gen(scm, "b")
     scm.tag("annotated", annotated=True, message="Annotated Tag")
     rev_c = _gen(scm, "c")
     rev_d = _gen(scm, "d")
-    assert git.list_all_commits() == matcher.unordered(rev_d, rev_c, rev_b, rev_a)
+    assert git.list_all_commits() == unordered(rev_d, rev_c, rev_b, rev_a)
 
     rev_e = _gen(scm, "e")
     scm.tag(
@@ -505,9 +517,7 @@ def test_list_all_tags(tmp_dir: TmpDir, scm: Git, git: Git, matcher: type[Matche
         annotated=True,
         message="Annotated Tag",
     )
-    assert git.list_all_commits() == matcher.unordered(
-        rev_e, rev_d, rev_c, rev_b, rev_a
-    )
+    assert git.list_all_commits() == unordered(rev_e, rev_d, rev_c, rev_b, rev_a)
 
     rev_f = _gen(scm, "f")
     scm.tag(
@@ -516,15 +526,15 @@ def test_list_all_tags(tmp_dir: TmpDir, scm: Git, git: Git, matcher: type[Matche
         annotated=True,
         message="Annotated Tag 3",
     )
-    assert git.list_all_commits() == matcher.unordered(
-        rev_f, rev_e, rev_d, rev_c, rev_b, rev_a
-    )
+    assert git.list_all_commits() == unordered(rev_f, rev_e, rev_d, rev_c, rev_b, rev_a)
 
     scm.gitpython.git.reset(rev_a, hard=True)
-    assert git.list_all_commits() == matcher.unordered(rev_b, rev_a)
+    assert git.list_all_commits() == unordered(rev_b, rev_a)
 
 
-def test_list_all_commits_dangling_annotated_tag(tmp_dir: TmpDir, scm: Git, git: Git):
+def test_list_all_commits_dangling_annotated_tag(
+    tmp_dir: pathlib.Path, scm: Git, git: Git
+):
     rev_a = _gen(scm, "a")
     scm.tag("annotated", annotated=True, message="Annotated Tag")
 
@@ -537,9 +547,7 @@ def test_list_all_commits_dangling_annotated_tag(tmp_dir: TmpDir, scm: Git, git:
     assert git.list_all_commits() == [rev_a]  # Only reachable via the tag
 
 
-def test_list_all_commits_orphan(
-    tmp_dir: TmpDir, scm: Git, git: Git, matcher: type[Matcher]
-):
+def test_list_all_commits_orphan(tmp_dir: pathlib.Path, scm: Git, git: Git):
     rev_a = _gen(scm, "a")
 
     # Make an orphan branch
@@ -547,12 +555,10 @@ def test_list_all_commits_orphan(
     rev_orphan = _gen(scm, "orphanfile")
 
     assert rev_orphan != rev_a
-    assert git.list_all_commits() == matcher.unordered(rev_orphan, rev_a)
+    assert git.list_all_commits() == unordered(rev_orphan, rev_a)
 
 
-def test_list_all_commits_refs(
-    tmp_dir: TmpDir, scm: Git, git: Git, matcher: type[Matcher]
-):
+def test_list_all_commits_refs(tmp_dir: pathlib.Path, scm: Git, git: Git):
     assert git.list_all_commits() == []
 
     rev_a = _gen(scm, "a")
@@ -560,12 +566,12 @@ def test_list_all_commits_refs(
     assert git.list_all_commits() == [rev_a]
     rev_b = _gen(scm, "b")
     scm.set_ref("refs/remotes/origin/feature", rev_b)
-    assert git.list_all_commits() == matcher.unordered(rev_b, rev_a)
+    assert git.list_all_commits() == unordered(rev_b, rev_a)
 
     # also add refs/exps/foo/bar
     rev_c = _gen(scm, "c")
     scm.set_ref("refs/exps/foo/bar", rev_c)
-    assert git.list_all_commits() == matcher.unordered(rev_c, rev_b, rev_a)
+    assert git.list_all_commits() == unordered(rev_c, rev_b, rev_a)
 
     # Dangling/broken ref ---
     scm.set_ref("refs/heads/bad-ref", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
@@ -574,23 +580,21 @@ def test_list_all_commits_refs(
     scm.remove_ref("refs/heads/bad-ref")
 
     scm.gitpython.git.reset(rev_a, hard=True)
-    assert git.list_all_commits() == matcher.unordered(rev_b, rev_a)
+    assert git.list_all_commits() == unordered(rev_b, rev_a)
 
 
-def test_list_all_commits_detached_head(
-    tmp_dir: TmpDir, scm: Git, git: Git, matcher: type[Matcher]
-):
+def test_list_all_commits_detached_head(tmp_dir: pathlib.Path, scm: Git, git: Git):
     rev_a = _gen(scm, "a")
     rev_b = _gen(scm, "b")
     rev_c = _gen(scm, "c")
     scm.checkout(rev_b)
 
     assert scm.pygit2.repo.head_is_detached
-    assert git.list_all_commits() == matcher.unordered(rev_c, rev_b, rev_a)
+    assert git.list_all_commits() == unordered(rev_c, rev_b, rev_a)
 
 
 @pytest.mark.skip_git_backend("pygit2")
-def test_ignore_remove_empty(tmp_dir: TmpDir, scm: Git, git: Git):
+def test_ignore_remove_empty(tmp_dir: pathlib.Path, scm: Git, git: Git):
     test_entries = [
         {"entry": "/foo1", "path": f"{tmp_dir}/foo1"},
         {"entry": "/foo2", "path": f"{tmp_dir}/foo2"},
@@ -614,14 +618,14 @@ def test_ignore_remove_empty(tmp_dir: TmpDir, scm: Git, git: Git):
 @pytest.mark.skip_git_backend("pygit2")
 @pytest.mark.skipif(os.name == "nt", reason="Git hooks not supported on Windows")
 @pytest.mark.parametrize("hook", ["pre-commit", "commit-msg"])
-def test_commit_no_verify(tmp_dir: TmpDir, scm: Git, git: Git, hook: str):
+def test_commit_no_verify(tmp_dir: pathlib.Path, scm: Git, git: Git, hook: str):
     import stat
 
     hook_file = os.path.join(".git", "hooks", hook)
-    tmp_dir.gen(hook_file, "#!/usr/bin/env python\nimport sys\nsys.exit(1)")
+    (tmp_dir / hook_file).write_bytes(b"#!/usr/bin/env python\nimport sys\nsys.exit(1)")
     os.chmod(hook_file, stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC)
 
-    tmp_dir.gen("foo", "foo")
+    (tmp_dir / "foo").write_bytes(b"foo")
     git.add(["foo"])
     with pytest.raises(SCMError):
         git.commit("commit foo")
@@ -630,19 +634,19 @@ def test_commit_no_verify(tmp_dir: TmpDir, scm: Git, git: Git, hook: str):
 
 @pytest.mark.skip_git_backend("dulwich")
 @pytest.mark.parametrize("squash", [True, False])
-def test_merge(tmp_dir: TmpDir, scm: Git, git: Git, squash: bool):
-    tmp_dir.gen("foo", "foo")
+def test_merge(tmp_dir: pathlib.Path, scm: Git, git: Git, squash: bool):
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit("foo", message="init")
     init_rev = scm.get_rev()
 
     scm.checkout("branch", create_new=True)
-    tmp_dir.gen("foo", "bar")
+    (tmp_dir / "foo").write_bytes(b"bar")
     scm.add_commit("foo", message="bar")
     branch = scm.resolve_rev("branch")
 
     scm.checkout("master")
 
-    tmp_dir.gen("foo", "baz")
+    (tmp_dir / "foo").write_bytes(b"baz")
     scm.add_commit("foo", message="baz")
     with pytest.raises(MergeConflictError):
         git.merge(branch, commit=not squash, squash=squash, msg="merge")
@@ -658,17 +662,28 @@ def test_merge(tmp_dir: TmpDir, scm: Git, git: Git, squash: bool):
 
 
 @pytest.mark.skip_git_backend("dulwich")
-def test_checkout_index(tmp_dir: TmpDir, scm: Git, git: Git):
-    files = tmp_dir.gen({"foo": "foo", "bar": "bar", "dir": {"baz": "baz"}})
-    scm.add_commit(files, message="init")
-    tmp_dir.gen({"foo": "baz", "dir": {"baz": "foo"}})
+def test_checkout_index(
+    monkeypatch: pytest.MonkeyPatch, tmp_dir: pathlib.Path, scm: Git, git: Git
+):
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "bar").write_bytes(b"bar")
+    (tmp_dir / "dir").mkdir()
+    (tmp_dir / "dir" / "baz").write_bytes(b"baz")
+    scm.add_commit(["foo", "bar", "dir"], message="init")
 
-    with (tmp_dir / "dir").chdir():
-        git.checkout_index([os.path.join("..", "foo"), "baz"], force=True)
+    (tmp_dir / "foo").write_bytes(b"baz")
+    (tmp_dir / "dir" / "baz").write_bytes(b"foo")
+
+    monkeypatch.chdir(tmp_dir / "dir")
+    git.checkout_index([os.path.join("..", "foo"), "baz"], force=True)
     assert (tmp_dir / "foo").read_text() == "foo"
     assert (tmp_dir / "dir" / "baz").read_text() == "baz"
 
-    tmp_dir.gen({"foo": "baz", "bar": "baz", "dir": {"baz": "foo"}})
+    monkeypatch.chdir(tmp_dir)
+
+    (tmp_dir / "bar").write_bytes(b"baz")
+    (tmp_dir / "foo").write_bytes(b"baz")
+    (tmp_dir / "dir" / "baz").write_bytes(b"foo")
     git.checkout_index(force=True)
     assert (tmp_dir / "foo").read_text() == "foo"
     assert (tmp_dir / "bar").read_text() == "bar"
@@ -678,58 +693,52 @@ def test_checkout_index(tmp_dir: TmpDir, scm: Git, git: Git):
 @pytest.mark.skip_git_backend("dulwich")
 @pytest.mark.parametrize("strategy, expected", [("ours", "baz"), ("theirs", "bar")])
 def test_checkout_index_conflicts(
-    tmp_dir: TmpDir, scm: Git, git: Git, strategy: str, expected: str
+    tmp_dir: pathlib.Path, scm: Git, git: Git, strategy: str, expected: str
 ):
-    tmp_dir.gen({"file": "foo"})
+    (tmp_dir / "file").write_bytes(b"foo")
     scm.add_commit("file", message="init")
 
     scm.checkout("branch", create_new=True)
-    tmp_dir.gen({"file": "bar"})
+    (tmp_dir / "file").write_bytes(b"bar")
     scm.add_commit("file", message="bar")
     rev_bar = scm.get_rev()
 
     scm.checkout("master")
-    tmp_dir.gen({"file": "baz"})
+    (tmp_dir / "file").write_bytes(b"baz")
     scm.add_commit("file", message="baz")
 
     with pytest.raises(MergeConflictError):
         git.merge(rev_bar, commit=False, squash=True)
 
-    git.checkout_index(
-        ours=strategy == "ours",
-        theirs=strategy == "theirs",
-    )
+    git.checkout_index(ours=strategy == "ours", theirs=strategy == "theirs")
     assert (tmp_dir / "file").read_text() == expected
 
 
 @pytest.mark.skip_git_backend("dulwich")
 def test_resolve_rev(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
-    remote_git_dir: TmpDir,
+    remote_git_dir: pathlib.Path,
 ):
     url = f"file://{remote_git_dir.resolve().as_posix()}"
     scm.gitpython.repo.create_remote("origin", url)
     scm.gitpython.repo.create_remote("upstream", url)
 
-    tmp_dir.gen({"file": "0"})
+    (tmp_dir / "file").write_bytes(b"0")
     scm.add_commit("file", message="init")
     init_rev = scm.get_rev()
 
-    tmp_dir.gen({"file": "1"})
+    (tmp_dir / "file").write_bytes(b"1")
     scm.add_commit("file", message="1")
     rev = scm.get_rev()
 
     scm.checkout("branch", create_new=True)
-    tmp_dir.gen(
-        {
-            os.path.join(".git", "refs", "foo"): rev,
-            os.path.join(".git", "refs", "remotes", "origin", "bar"): rev,
-            os.path.join(".git", "refs", "remotes", "origin", "baz"): rev,
-            os.path.join(".git", "refs", "remotes", "upstream", "baz"): init_rev,
-        }
-    )
+
+    _write_loose_ref(scm, "foo", rev)
+    _write_loose_ref(scm, "remotes/origin/bar", rev)
+    _write_loose_ref(scm, "remotes/origin/baz", rev)
+    _write_loose_ref(scm, "remotes/upstream/baz", init_rev)
 
     assert git.resolve_rev(rev) == rev
     assert git.resolve_rev(rev[:7]) == rev
@@ -751,12 +760,12 @@ def test_resolve_rev(
 
 
 @pytest.mark.skip_git_backend("dulwich")
-def test_checkout(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"foo": "foo"})
+def test_checkout(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit("foo", message="foo")
     foo_rev = scm.get_rev()
 
-    tmp_dir.gen("foo", "bar")
+    (tmp_dir / "foo").write_bytes(b"bar")
     scm.add_commit("foo", message="bar")
     bar_rev = scm.get_rev()
 
@@ -776,11 +785,16 @@ def test_checkout(tmp_dir: TmpDir, scm: Git, git: Git):
 
 
 @pytest.mark.skip_git_backend("dulwich")
-def test_reset(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"foo": "foo", "dir": {"baz": "baz"}})
+def test_reset(
+    monkeypatch: pytest.MonkeyPatch, tmp_dir: pathlib.Path, scm: Git, git: Git
+):
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "dir").mkdir()
+    (tmp_dir / "dir" / "baz").write_bytes(b"baz")
     scm.add_commit(["foo", "dir"], message="init")
 
-    tmp_dir.gen({"foo": "bar", "dir": {"baz": "bar"}})
+    (tmp_dir / "foo").write_bytes(b"bar")
+    (tmp_dir / "dir" / "baz").write_bytes(b"bar")
     scm.add(["foo", os.path.join("dir", "baz")])
     git.reset()
     assert (tmp_dir / "foo").read_text() == "bar"
@@ -797,10 +811,15 @@ def test_reset(tmp_dir: TmpDir, scm: Git, git: Git):
     assert len(staged) == 0
     assert len(unstaged) == 0
 
-    tmp_dir.gen({"foo": "bar", "bar": "bar", "dir": {"baz": "bar"}})
+    (tmp_dir / "foo").write_bytes(b"bar")
+    (tmp_dir / "bar").write_bytes(b"bar")
+    (tmp_dir / "dir" / "baz").write_bytes(b"bar")
     scm.add(["foo", "bar", os.path.join("dir", "baz")])
-    with (tmp_dir / "dir").chdir():
-        git.reset(paths=[os.path.join("..", "foo"), os.path.join("baz")])
+
+    monkeypatch.chdir(tmp_dir / "dir")
+    git.reset(paths=[os.path.join("..", "foo"), os.path.join("baz")])
+
+    monkeypatch.chdir(tmp_dir)
     assert (tmp_dir / "foo").read_text() == "bar"
     assert (tmp_dir / "bar").read_text() == "bar"
     assert (tmp_dir / "dir" / "baz").read_text() == "bar"
@@ -810,8 +829,11 @@ def test_reset(tmp_dir: TmpDir, scm: Git, git: Git):
 
 
 @pytest.mark.skip_git_backend("pygit2")
-def test_add(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"foo": "foo", "bar": "bar", "dir": {"baz": "baz"}})
+def test_add(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "bar").write_bytes(b"bar")
+    (tmp_dir / "dir").mkdir()
+    (tmp_dir / "dir" / "baz").write_bytes(b"baz")
     git.add(["foo", "dir"])
     staged, unstaged, untracked = scm.status()
     assert set(staged["add"]) == {"foo", "dir/baz"}
@@ -819,7 +841,9 @@ def test_add(tmp_dir: TmpDir, scm: Git, git: Git):
     assert len(untracked) == 1
 
     scm.commit("commit")
-    tmp_dir.gen({"foo": "bar", "dir": {"baz": "bar"}})
+
+    (tmp_dir / "foo").write_bytes(b"bar")
+    (tmp_dir / "dir" / "baz").write_bytes(b"bar")
     git.add([], update=True)
     staged, unstaged, _ = scm.status()
     assert set(staged["modify"]) == {"foo", "dir/baz"}
@@ -835,9 +859,12 @@ def test_add(tmp_dir: TmpDir, scm: Git, git: Git):
 
 
 @pytest.mark.skip_git_backend("pygit2")
-def test_add_force(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"foo": "foo", "bar": "bar", "dir": {"baz": "baz"}})
-    tmp_dir.gen({".gitignore": "foo\ndir/"})
+def test_add_force(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "bar").write_bytes(b"bar")
+    (tmp_dir / "dir").mkdir()
+    (tmp_dir / "dir" / "baz").write_bytes(b"baz")
+    (tmp_dir / ".gitignore").write_bytes(b"foo\ndir/")
 
     git.add(["foo", "bar", "dir"])
     staged, _unstaged, untracked = scm.status()
@@ -851,26 +878,29 @@ def test_add_force(tmp_dir: TmpDir, scm: Git, git: Git):
 
 
 @pytest.mark.skip_git_backend("dulwich", "gitpython")
-def test_checkout_subdir(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen("foo", "foo")
+def test_checkout_subdir(
+    monkeypatch: pytest.MonkeyPatch, tmp_dir: pathlib.Path, scm: Git, git: Git
+):
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit("foo", message="init")
     rev = scm.get_rev()
 
-    tmp_dir.gen({"dir": {"bar": "bar"}})
+    (tmp_dir / "dir").mkdir()
+    (tmp_dir / "dir" / "bar").write_bytes(b"bar")
     scm.add_commit("dir", message="dir")
 
-    with (tmp_dir / "dir").chdir():
-        git.checkout(rev)
-        assert not (tmp_dir / "dir" / "bar").exists()
+    monkeypatch.chdir(tmp_dir / "dir")
+    git.checkout(rev)
+    assert not (tmp_dir / "dir" / "bar").exists()
 
 
 @pytest.mark.skip_git_backend("pygit2", "gitpython")
-def test_describe(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"foo": "foo"})
+def test_describe(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit("foo", message="foo")
     rev_foo = scm.get_rev()
 
-    tmp_dir.gen({"foo": "bar"})
+    (tmp_dir / "foo").write_bytes(b"bar")
     scm.add_commit("foo", message="bar")
     rev_bar = scm.get_rev()
 
@@ -879,7 +909,7 @@ def test_describe(tmp_dir: TmpDir, scm: Git, git: Git):
     scm.checkout("branch", create_new=True)
     assert git.describe([rev_bar], "refs/heads") == {rev_bar: "refs/heads/branch"}
 
-    tmp_dir.gen({"foo": "foobar"})
+    (tmp_dir / "foo").write_bytes(b"foobar")
     scm.add_commit("foo", message="foobar")
     rev_foobar = scm.get_rev()
 
@@ -896,24 +926,25 @@ def test_describe(tmp_dir: TmpDir, scm: Git, git: Git):
     }
 
 
-def test_ignore(tmp_dir: TmpDir, scm: Git, git: Git):
+def test_ignore(tmp_dir: pathlib.Path, scm: Git, git: Git):
     file = os.fspath(tmp_dir / "foo")
 
     git.ignore(file)
-    assert (tmp_dir / ".gitignore").cat() == "/foo\n"
+    assert (tmp_dir / ".gitignore").read_text(encoding="utf-8") == "/foo\n"
 
     git._reset()
     git.ignore(file)
-    assert (tmp_dir / ".gitignore").cat() == "/foo\n"
-
+    assert (tmp_dir / ".gitignore").read_text(encoding="utf-8") == "/foo\n"
     git._reset()
     git.ignore_remove(file)
     assert not (tmp_dir / ".gitignore").exists()
 
 
-def test_ignored(tmp_dir: TmpDir, scm: Git, git: Git, git_backend: str):
-    tmp_dir.gen({"dir1": {"file1.jpg": "cont", "file2.txt": "cont"}})
-    tmp_dir.gen({".gitignore": "dir1/*.jpg"})
+def test_ignored(tmp_dir: pathlib.Path, scm: Git, git: Git, git_backend: str):
+    (tmp_dir / "dir1").mkdir()
+    (tmp_dir / "dir1" / "file1.jpg").write_bytes(b"cont")
+    (tmp_dir / "dir1" / "file2.txt").write_bytes(b"cont")
+    (tmp_dir / ".gitignore").write_bytes(b"dir1/*.jpg")
 
     git._reset()
 
@@ -922,16 +953,13 @@ def test_ignored(tmp_dir: TmpDir, scm: Git, git: Git, git_backend: str):
 
 
 @pytest.mark.skip_git_backend("pygit2", "gitpython")
-def test_ignored_dir_unignored_subdirs(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({".gitignore": "data/**\n!data/**/\n!data/**/*.csv"})
+def test_ignored_dir_unignored_subdirs(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / ".gitignore").write_bytes(b"data/**\n!data/**/\n!data/**/*.csv")
     scm.add([".gitignore"])
-    tmp_dir.gen(
-        {
-            os.path.join("data", "raw", "tracked.csv"): "cont",
-            os.path.join("data", "raw", "not_tracked.json"): "cont",
-        }
-    )
 
+    (tmp_dir / "data" / "raw").mkdir(parents=True)
+    (tmp_dir / "data" / "raw" / "tracked.csv").write_bytes(b"cont")
+    (tmp_dir / "data" / "raw" / "not_tracked.json").write_bytes(b"cont")
     git._reset()
 
     assert not git.is_ignored(tmp_dir / "data" / "raw" / "tracked.csv")
@@ -953,8 +981,9 @@ def test_ignored_dir_unignored_subdirs(tmp_dir: TmpDir, scm: Git, git: Git):
     assert not git.is_ignored(os.path.join("data", f"non_existent{os.sep}"))
 
 
-def test_get_gitignore(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"file1": "contents", "dir": {}})
+def test_get_gitignore(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "file1").write_bytes(b"contents")
+    (tmp_dir / "dir").mkdir()
 
     data_dir = os.fspath(tmp_dir / "file1")
     entry, gitignore = git._get_gitignore(data_dir)
@@ -968,8 +997,9 @@ def test_get_gitignore(tmp_dir: TmpDir, scm: Git, git: Git):
     assert gitignore == os.fspath(tmp_dir / ".gitignore")
 
 
-def test_get_gitignore_symlink(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"dir": {"subdir": {"data": "contents"}}})
+def test_get_gitignore_symlink(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "dir" / "subdir").mkdir(parents=True)
+    (tmp_dir / "dir" / "subdir" / "data").write_bytes(b"contents")
     link = tmp_dir / "link"
     link.symlink_to(tmp_dir / "dir" / "subdir" / "data")
 
@@ -978,8 +1008,9 @@ def test_get_gitignore_symlink(tmp_dir: TmpDir, scm: Git, git: Git):
     assert gitignore == os.fspath(tmp_dir / ".gitignore")
 
 
-def test_get_gitignore_subdir(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"dir1": {"file1": "cont", "dir2": {}}})
+def test_get_gitignore_subdir(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "dir1" / "dir2").mkdir(parents=True)
+    (tmp_dir / "dir1" / "file1").write_bytes(b"contents")
 
     data_dir = os.fspath(tmp_dir / "dir1" / "file1")
     entry, gitignore = git._get_gitignore(data_dir)
@@ -993,9 +1024,10 @@ def test_get_gitignore_subdir(tmp_dir: TmpDir, scm: Git, git: Git):
 
 
 def test_gitignore_should_append_newline_to_gitignore(
-    tmp_dir: TmpDir, scm: Git, git: Git
+    tmp_dir: pathlib.Path, scm: Git, git: Git
 ):
-    tmp_dir.gen({"foo": "foo", "bar": "bar"})
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "bar").write_bytes(b"bar")
 
     bar_path = os.fspath(tmp_dir / "bar")
     gitignore = tmp_dir / ".gitignore"
@@ -1011,8 +1043,8 @@ def test_gitignore_should_append_newline_to_gitignore(
 
 
 @pytest.mark.skip_git_backend("dulwich")
-def test_git_detach_head(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen({"file": "0"})
+def test_git_detach_head(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "file").write_bytes(b"0")
     scm.add_commit("file", message="init")
     init_rev = scm.get_rev()
 
@@ -1026,7 +1058,7 @@ def test_git_detach_head(tmp_dir: TmpDir, scm: Git, git: Git):
 @pytest.mark.slow
 @pytest.mark.asyncio
 async def test_git_ssh(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
     sftp: SFTPClient,
@@ -1041,7 +1073,7 @@ async def test_git_ssh(
     result = await ssh_connection.run("git init --bare test-repo.git")
     assert result.returncode == 0
 
-    tmp_dir.gen("foo", "foo")
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit("foo", message="init")
     rev = scm.get_rev()
 
@@ -1074,19 +1106,19 @@ async def test_git_ssh(
 @pytest.mark.parametrize("shallow_branch", [None, "master"])
 @pytest.mark.parametrize("bare", [True, False])
 def test_clone(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
-    tmp_dir_factory: TempDirFactory,
+    tmp_path_factory: pytest.TempPathFactory,
     scheme: str,
     shallow_branch: Optional[str],
     bare: bool,
 ):
-    tmp_dir.gen("foo", "foo")
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit("foo", message="init")
     rev = scm.get_rev()
 
-    target_dir = tmp_dir_factory.mktemp("git-clone")
+    target_dir = tmp_path_factory.mktemp("git-clone")
     git.clone(
         f"{scheme}{tmp_dir}",
         str(target_dir),
@@ -1116,7 +1148,9 @@ def proxy_server():
     _ProxyServer.tearDownClass()
 
 
-def test_clone_proxy_server(proxy_server: str, scm: Git, git: Git, tmp_dir: TmpDir):
+def test_clone_proxy_server(
+    proxy_server: str, scm: Git, git: Git, tmp_dir: pathlib.Path
+):
     url = "https://github.com/treeverse/dvcyaml-schema"
 
     p = (
@@ -1137,7 +1171,9 @@ proxy = {proxy_server}
     git.clone(url, "dir")
 
 
-def test_iter_remote_refs_proxy_server(proxy_server: str, scm: Git, tmp_dir: TmpDir):
+def test_iter_remote_refs_proxy_server(
+    proxy_server: str, scm: Git, tmp_dir: pathlib.Path
+):
     url = "https://github.com/treeverse/dvcyaml-schema"
     git = GitBackends.DEFAULT["dulwich"](".")
 
@@ -1162,7 +1198,7 @@ proxy = {proxy_server}
 
 @pytest.mark.skip_git_backend("gitpython")
 def test_fetch_refspecs_proxy_server(
-    proxy_server: str, scm: Git, git: Git, tmp_dir: TmpDir
+    proxy_server: str, scm: Git, git: Git, tmp_dir: pathlib.Path
 ):
     url = "https://github.com/treeverse/dvcyaml-schema"
 
@@ -1185,11 +1221,13 @@ proxy = {proxy_server}
 
 
 @pytest.mark.skip_git_backend("pygit2")
-def test_fetch(tmp_dir: TmpDir, scm: Git, git: Git, tmp_dir_factory: TempDirFactory):
-    tmp_dir.gen("foo", "foo")
+def test_fetch(
+    tmp_dir: pathlib.Path, scm: Git, git: Git, tmp_path_factory: pytest.TempPathFactory
+):
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit("foo", message="init")
 
-    target_dir = tmp_dir_factory.mktemp("git-clone")
+    target_dir = tmp_path_factory.mktemp("git-clone")
     git.clone(str(tmp_dir), target_dir)
     target = Git(str(target_dir))
 
@@ -1204,11 +1242,10 @@ def test_fetch(tmp_dir: TmpDir, scm: Git, git: Git, tmp_dir_factory: TempDirFact
 @pytest.mark.parametrize("untracked_files", ["all", "no", "normal"])
 @pytest.mark.parametrize("ignored", [False, True])
 def test_status(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
     git_backend,
-    tmp_dir_factory: TempDirFactory,
     untracked_files: str,
     ignored: bool,
 ):
@@ -1217,14 +1254,10 @@ def test_status(
             "untracked_files=normal is not implemented for dulwich",
         )
 
-    tmp_dir.gen(
-        {
-            "foo": "foo",
-            "bar": "bar",
-            ".gitignore": "ignored",
-            "ignored": "ignored",
-        }
-    )
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "bar").write_bytes(b"bar")
+    (tmp_dir / ".gitignore").write_bytes(b"ignored\n")
+    (tmp_dir / "ignored").write_bytes(b"ignored")
     scm.add_commit(["foo", "bar", ".gitignore"], message="init")
 
     staged, unstaged, untracked = git.status(ignored, untracked_files)
@@ -1242,7 +1275,8 @@ def test_status(
     with (tmp_dir / "bar").open("a") as fobj:
         fobj.write("modified")
 
-    tmp_dir.gen({"untracked_dir": {"subfolder": {"subfile": "subfile"}}})
+    (tmp_dir / "untracked_dir" / "subfolder").mkdir(parents=True)
+    (tmp_dir / "untracked_dir" / "subfolder" / "subfile").write_bytes(b"subfile")
     expected_untracked = []
     if ignored and untracked_files != "no":
         expected_untracked.append("ignored")
@@ -1261,7 +1295,7 @@ def test_status(
 
 @pytest.mark.skip_git_backend("pygit2")
 def test_is_dirty_empty(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
 ):
@@ -1270,11 +1304,11 @@ def test_is_dirty_empty(
 
 @pytest.mark.skip_git_backend("pygit2")
 def test_is_dirty_added(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
 ):
-    tmp_dir.gen("foo", "foo")
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add("foo")
 
     assert git.is_dirty()
@@ -1284,14 +1318,14 @@ def test_is_dirty_added(
 
 @pytest.mark.skip_git_backend("pygit2")
 def test_is_dirty_modified(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
 ):
-    tmp_dir.gen("foo", "foo")
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit("foo", message="add foo")
 
-    tmp_dir.gen("foo", "modified")
+    (tmp_dir / "foo").write_bytes(b"modified")
     assert git.is_dirty()
     scm.add_commit("foo", message="modified")
     assert not git.is_dirty()
@@ -1299,11 +1333,11 @@ def test_is_dirty_modified(
 
 @pytest.mark.skip_git_backend("pygit2")
 def test_is_dirty_deleted(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
 ):
-    tmp_dir.gen("foo", "foo")
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit("foo", message="add foo")
 
     assert not git.is_dirty()
@@ -1317,11 +1351,11 @@ def test_is_dirty_deleted(
 
 @pytest.mark.skip_git_backend("pygit2")
 def test_is_dirty_untracked(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     git: Git,
 ):
-    tmp_dir.gen("untracked", "untracked")
+    (tmp_dir / "untracked").write_bytes(b"untracked")
     assert git.is_dirty(untracked_files=True)
     assert not git.is_dirty(untracked_files=False)
 
@@ -1330,7 +1364,7 @@ def test_is_dirty_untracked(
     "backends", [["gitpython", "dulwich"], ["dulwich", "gitpython"]]
 )
 def test_backend_func(
-    tmp_dir: TmpDir,
+    tmp_dir: pathlib.Path,
     scm: Git,
     backends: list[str],
     mocker: MockerFixture,
@@ -1338,15 +1372,15 @@ def test_backend_func(
     from functools import partial
 
     scm.add = partial(scm._backend_func, "add", backends=backends)
-    tmp_dir.gen({"foo": "foo"})
+    (tmp_dir / "foo").write_bytes(b"foo")
     backend = getattr(scm, backends[0])
     mock = mocker.spy(backend, "add")
     scm.add(["foo"])
     mock.assert_called_once_with(["foo"])
 
 
-def test_tag(tmp_dir: TmpDir, scm: Git, git: Git):
-    tmp_dir.gen("foo", "foo")
+def test_tag(tmp_dir: pathlib.Path, scm: Git, git: Git):
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit("foo", message="init")
     rev = scm.get_rev()
 
@@ -1358,7 +1392,7 @@ def test_tag(tmp_dir: TmpDir, scm: Git, git: Git):
 
 
 def test_get_tag(tmp_dir, scm: Git, git: Git):
-    tmp_dir.gen("foo", "foo")
+    (tmp_dir / "foo").write_bytes(b"foo")
     scm.add_commit("foo", message="init")
     rev = scm.get_rev()
 
@@ -1376,8 +1410,8 @@ def test_get_tag(tmp_dir, scm: Git, git: Git):
 
 @pytest.mark.skip_git_backend("gitpython")
 def test_config(tmp_dir, scm: Git, git: Git):
-    tmp_dir.gen({".git": {"config": "[test]\nfoo = true\n"}})
-    tmp_dir.gen(".otherconfig", "[test]\nfoo = false\n")
+    (tmp_dir / ".git" / "config").write_bytes(b"[test]\nfoo = true\n")
+    (tmp_dir / ".otherconfig").write_bytes(b"[test]\nfoo = false\n")
     config = git.get_config()
     assert config.get(("test",), "foo") == "true"
     assert config.get_bool(("test",), "foo") is True
@@ -1389,14 +1423,14 @@ def test_config(tmp_dir, scm: Git, git: Git):
 
 @pytest.mark.skip_git_backend("dulwich")
 def test_check_attr(tmp_dir, scm: Git, git: Git):
-    tmp_dir.gen("foo.txt", "foo")
-    tmp_dir.gen(".gitattributes", "*.txt text")
+    (tmp_dir / "foo.txt").write_bytes(b"foo")
+    (tmp_dir / ".gitattributes").write_bytes(b"*.txt text")
     scm.add_commit([".gitattributes", "foo"], message="init")
     rev = scm.get_rev()
     assert git.check_attr("foo.txt", "text") is True
     assert git.check_attr("foo.txt", "filter") is None
 
-    tmp_dir.gen(".gitattributes", "*.txt -text filter=lfs")
+    (tmp_dir / ".gitattributes").write_bytes(b"*.txt -text filter=lfs")
     assert git.check_attr("foo.txt", "text") is False
     assert git.check_attr("foo.txt", "filter") == "lfs"
     assert git.check_attr("foo.txt", "text", source=rev) is True

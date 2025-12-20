@@ -5,7 +5,7 @@ import os
 import threading
 from typing import Any, Optional
 
-from fsspec.asyn import (  # noqa: F401, pylint:disable=unused-import
+from fsspec.asyn import (  # noqa: F401
     sync,
     sync_wrapper,
 )

@@ -14,8 +14,6 @@ from typing import (
     Union,
 )
 
-from funcy import ignore
-
 from scmrepo.exceptions import (
     CloneError,
     InvalidRemote,
@@ -123,13 +121,11 @@ class GitPythonObject(GitObject):
         return self.obj.hexsha
 
 
-class GitPythonBackend(BaseGitBackend):  # pylint:disable=abstract-method
+class GitPythonBackend(BaseGitBackend):
     """git-python Git backend."""
 
     @requires_git
-    def __init__(  # pylint:disable=W0231
-        self, root_dir=os.curdir, search_parent_directories=True
-    ):
+    def __init__(self, root_dir=os.curdir, search_parent_directories=True):
         import git
         from git.exc import InvalidGitRepositoryError
 
@@ -157,8 +153,10 @@ class GitPythonBackend(BaseGitBackend):  # pylint:disable=abstract-method
     def is_ignored(self, path: "Union[str, os.PathLike[str]]") -> bool:
         from git.exc import GitCommandError
 
-        func = ignore(GitCommandError)(self.repo.git.check_ignore)
-        return bool(func(str(path)))
+        try:
+            return bool(self.repo.git.check_ignore(str(path)))
+        except GitCommandError:
+            return False
 
     @property
     def root_dir(self) -> Optional[str]:
@@ -214,13 +212,12 @@ class GitPythonBackend(BaseGitBackend):  # pylint:disable=abstract-method
             else:
                 tmp_repo = clone_from(branch=shallow_branch, depth=1)
             tmp_repo.close()
-        except GitCommandError as exc:  # pylint: disable=no-member
+        except GitCommandError as exc:
             raise CloneError(url, os.fsdecode(to_path)) from exc
 
     @staticmethod
     @requires_git
     def init(path: str, bare: bool = False) -> None:
-        from funcy import retry
         from git import Repo
         from git.exc import GitCommandNotFound
 
@@ -229,9 +226,12 @@ class GitPythonBackend(BaseGitBackend):  # pylint:disable=abstract-method
         #
         #    GitCommandNotFound: Cmd('git') not found due to:
         #        OSError('[Errno 35] Resource temporarily unavailable')
-        method = retry(5, GitCommandNotFound)(Repo.init)
-        git = method(path, bare=bare)
-        git.close()
+        for _ in range(5):
+            try:
+                Repo.init(path, bare=bare).close()
+                return
+            except GitCommandNotFound:
+                pass
 
     @staticmethod
     @requires_git

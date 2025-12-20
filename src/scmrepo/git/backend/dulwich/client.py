@@ -6,7 +6,7 @@ from dulwich.client import HTTPUnauthorized, Urllib3HttpGitClient
 from scmrepo.git.credentials import Credential, CredentialNotFoundError
 
 
-class GitCredentialsHTTPClient(Urllib3HttpGitClient):  # pylint: disable=abstract-method
+class GitCredentialsHTTPClient(Urllib3HttpGitClient):
     def __init__(
         self,
         base_url,

@@ -179,5 +179,5 @@ if __name__ == "__main__":
         help="Refs or commits to fetch. Defaults to 'HEAD'.",
     )
     args = parser.parse_args()
-    with Git(".") as scm_:  # pylint: disable=E0601
+    with Git(".") as scm_:
         fetch(scm_, revs=args.refs, remote=args.remote)

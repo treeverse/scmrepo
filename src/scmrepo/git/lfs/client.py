@@ -16,8 +16,8 @@ from aiohttp_retry import ExponentialRetry, RetryClient
 from fsspec.asyn import _run_coros_in_chunks, sync_wrapper
 from fsspec.callbacks import DEFAULT_CALLBACK
 from fsspec.implementations.http import HTTPFileSystem
-from funcy import cached_property
 
+from scmrepo.compat import cached_property
 from scmrepo.git.backend.dulwich import _get_ssh_vendor
 from scmrepo.git.credentials import Credential, CredentialNotFoundError
 from scmrepo.urls import SCP_REGEX, is_scp_style_url
