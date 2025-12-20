@@ -116,9 +116,10 @@ files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
 module = [
-    "pygtrie",
-    "gitdb.*",
     "fsspec.*",
+    "gitdb.*",
+    "pygit2.*",
+    "pygtrie",
 ]
 ignore_missing_imports = true
 

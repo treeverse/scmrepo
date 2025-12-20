@@ -7,17 +7,6 @@ import pytest
 from scmrepo.git import Git, Stash
 
 
-def write_tree(base, tree):
-    for name, value in tree.items():
-        path = base / name
-        if isinstance(value, dict):
-            path.mkdir(parents=True, exist_ok=True)
-            write_tree(path, value)
-        else:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(value, encoding="utf-8")
-
-
 def test_git_stash_workspace(tmp_dir: pathlib.Path, scm: Git):
     (tmp_dir / "file").write_bytes(b"0")
     scm.add_commit("file", message="init")
@@ -151,11 +140,7 @@ def test_git_stash_clear(tmp_dir: pathlib.Path, scm: Git, ref: Optional[str]):
 
 
 @pytest.mark.skip_git_backend("dulwich")
-def test_git_stash_apply_index(
-    tmp_dir: pathlib.Path,
-    scm: Git,
-    git: Git,
-):
+def test_git_stash_apply_index(tmp_dir: pathlib.Path, scm: Git, git: Git):
     (tmp_dir / "file").write_bytes(b"0")
     scm.add_commit("file", message="init")
     (tmp_dir / "file").write_bytes(b"1")
@@ -173,11 +158,7 @@ def test_git_stash_apply_index(
     assert not dict(untracked)
 
 
-def test_git_stash_push_clean_workspace(
-    tmp_dir: pathlib.Path,
-    scm: Git,
-    git: Git,
-):
+def test_git_stash_push_clean_workspace(tmp_dir: pathlib.Path, scm: Git, git: Git):
     (tmp_dir / "file").write_bytes(b"0")
     scm.add_commit("file", message="init")
     assert git._stash_push("refs/stash") == (None, False)

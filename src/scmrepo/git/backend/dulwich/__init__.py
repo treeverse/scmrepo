@@ -367,17 +367,12 @@ class DulwichBackend(BaseGitBackend):
                     yield rel
 
     def commit(self, msg: str, no_verify: bool = False):
-        from dulwich import __version__ as dulwich_version
         from dulwich.errors import CommitError
         from dulwich.porcelain import Error, TimezoneFormatError, commit
         from dulwich.repo import InvalidUserIdentity
 
-        commit_kwargs: dict[str, Any] = {}
-        if dulwich_version >= (0, 24, 3):
-            commit_kwargs["sign"] = False
-
         try:
-            commit(self.repo, message=msg, no_verify=no_verify, **commit_kwargs)
+            commit(self.repo, message=msg, no_verify=no_verify, sign=False)
         except (CommitError, Error) as exc:
             raise SCMError("Git commit failed") from exc
         except InvalidUserIdentity as exc:

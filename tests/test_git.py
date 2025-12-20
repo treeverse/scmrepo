@@ -220,6 +220,12 @@ def test_set_ref(tmp_dir: pathlib.Path, scm: Git, git: Git):
     ).read_text().strip() == "ref: refs/heads/master"
 
 
+def _write_loose_ref(scm: Git, ref: str, rev: str) -> None:
+    path = pathlib.Path(scm.dir, "refs", *posixpath.split(ref))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(rev, encoding="utf-8")
+
+
 def test_get_ref(tmp_dir: pathlib.Path, scm: Git, git: Git):
     (tmp_dir / "file").write_bytes(b"0")
     scm.add_commit("file", message="init")
@@ -708,12 +714,6 @@ def test_checkout_index_conflicts(
     assert (tmp_dir / "file").read_text() == expected
 
 
-def _write_loose_ref(scm: Git, ref: str, rev: str) -> None:
-    path = pathlib.Path(scm.dir, "refs", *posixpath.split(ref))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(rev, encoding="utf-8")
-
-
 @pytest.mark.skip_git_backend("dulwich")
 def test_resolve_rev(
     tmp_dir: pathlib.Path,
@@ -753,7 +753,7 @@ def test_resolve_rev(
         git.resolve_rev("qux")
 
     with pytest.raises(RevError):
-        assert git.resolve_rev("baz") == "3"
+        git.resolve_rev("baz")
 
     with pytest.raises(RevError):
         git.resolve_rev("HEAD~3")
@@ -930,11 +930,11 @@ def test_ignore(tmp_dir: pathlib.Path, scm: Git, git: Git):
     file = os.fspath(tmp_dir / "foo")
 
     git.ignore(file)
-    assert (tmp_dir / ".gitignore").read_bytes() == b"/foo\n"
+    assert (tmp_dir / ".gitignore").read_text(encoding="utf-8") == "/foo\n"
 
     git._reset()
     git.ignore(file)
-    assert (tmp_dir / ".gitignore").read_bytes() == b"/foo\n"
+    assert (tmp_dir / ".gitignore").read_text(encoding="utf-8") == "/foo\n"
     git._reset()
     git.ignore_remove(file)
     assert not (tmp_dir / ".gitignore").exists()
