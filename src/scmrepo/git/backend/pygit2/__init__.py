@@ -13,8 +13,7 @@ from typing import (
 )
 from urllib.parse import urlparse
 
-from funcy import cached_property, reraise
-
+from scmrepo.compat import cached_property
 from scmrepo.exceptions import (
     CloneError,
     InvalidRemote,
@@ -62,7 +61,6 @@ class Pygit2Object(GitObject):
         if self.backend is not None:
             try:
                 if rev:
-                    # pylint: disable-next=protected-access
                     commit, _ref = self.backend._resolve_refish(rev)
                 else:
                     pass
@@ -94,7 +92,7 @@ class Pygit2Object(GitObject):
         return self.obj.filemode
 
     @cached_property
-    def size(self) -> int:  # pylint: disable=invalid-overridden-method
+    def size(self) -> int:
         # NOTE: obj.size is currently only available for blobs
         if self.obj.type_str == "blob":
             return self.obj.size
@@ -139,10 +137,8 @@ class Pygit2Config(Config):
             raise ValueError("invalid multivar config entry") from exc
 
 
-class Pygit2Backend(BaseGitBackend):  # pylint:disable=abstract-method
-    def __init__(  # pylint:disable=W0231
-        self, root_dir=os.curdir, search_parent_directories=True
-    ):
+class Pygit2Backend(BaseGitBackend):
+    def __init__(self, root_dir=os.curdir, search_parent_directories=True):
         import pygit2
 
         from .filter import LFSFilter
@@ -153,9 +149,7 @@ class Pygit2Backend(BaseGitBackend):  # pylint:disable=abstract-method
             ceiling_dirs = os.path.abspath(root_dir)
 
         # NOTE: discover_repository will return path/.git/
-        path = pygit2.discover_repository(  # pylint:disable=no-member
-            os.fspath(root_dir), True, ceiling_dirs
-        )
+        path = pygit2.discover_repository(os.fspath(root_dir), True, ceiling_dirs)
         if not path:
             raise SCMError(f"{root_dir} is not a git repository")
 
@@ -410,7 +404,7 @@ class Pygit2Backend(BaseGitBackend):  # pylint:disable=abstract-method
         if annotated and not message:
             raise SCMError("message is required for annotated tag")
         target_obj = self.repo.revparse_single(target or "HEAD")
-        with reraise(GitError, SCMError("Failed to create tag")):
+        try:
             self.repo.create_tag(
                 tag,
                 target_obj.id,
@@ -418,6 +412,8 @@ class Pygit2Backend(BaseGitBackend):  # pylint:disable=abstract-method
                 self.committer,
                 message or "",
             )
+        except GitError as exc:
+            raise SCMError("Failed to create tag") from exc
 
     def untracked_files(self) -> Iterable[str]:
         raise NotImplementedError
@@ -746,10 +742,7 @@ class Pygit2Backend(BaseGitBackend):  # pylint:disable=abstract-method
             return SyncStatus.UP_TO_DATE
 
         with self._get_remote(url) as remote:
-            with reraise(
-                GitError,
-                SCMError(f"Git failed to fetch ref from '{url}'"),
-            ):
+            try:
                 with RemoteCallbacks(progress=progress) as cb:
                     remote_refs: dict[str, Oid] = {}
                     if not force:
@@ -757,6 +750,8 @@ class Pygit2Backend(BaseGitBackend):  # pylint:disable=abstract-method
                     remote.fetch(
                         refspecs=refspecs, callbacks=cb, message="fetch", proxy=True
                     )
+            except GitError as exc:
+                raise SCMError(f"Git failed to fetch ref from '{url}'") from exc
 
             result: dict[str, SyncStatus] = {}
             for refspec in refspecs:

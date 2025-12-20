@@ -1,5 +1,5 @@
-# pylint: disable=redefined-outer-name
 import io
+import pathlib
 from collections import defaultdict
 from collections.abc import Sequence
 from http import HTTPStatus
@@ -10,7 +10,6 @@ import pytest
 from aiohttp import ClientResponseError
 from aioresponses import CallbackResult, aioresponses
 from pytest_mock import MockerFixture
-from pytest_test_utils import TempDirFactory, TmpDir
 from yarl import URL
 
 from scmrepo.git import Git
@@ -26,43 +25,45 @@ FOO_POINTER = (
 
 
 @pytest.fixture
-def storage(tmp_dir_factory: TempDirFactory) -> LFSStorage:
-    storage_path = tmp_dir_factory.mktemp("lfs")
+def storage(tmp_path_factory: pytest.TempPathFactory) -> LFSStorage:
+    storage_path = tmp_path_factory.mktemp("lfs")
     return LFSStorage(storage_path)
 
 
 @pytest.fixture
-def lfs(tmp_dir: TmpDir, scm: Git) -> None:
-    tmp_dir.gen(".gitattributes", "*.lfs filter=lfs diff=lfs merge=lfs -text")
+def lfs(tmp_dir: pathlib.Path, scm: Git) -> None:
+    (tmp_dir / ".gitattributes").write_bytes(
+        b"*.lfs filter=lfs diff=lfs merge=lfs -text"
+    )
     scm.add([".gitattributes"])
     scm.commit("init lfs attributes")
 
 
 @pytest.fixture
-def lfs_objects(tmp_dir: TmpDir) -> TmpDir:
+def lfs_objects(tmp_dir: pathlib.Path) -> pathlib.Path:
     objects = tmp_dir / ".git" / "lfs" / "objects"
     objects.mkdir(parents=True)
     return objects
 
 
-def test_pointer_build(tmp_dir: TmpDir):
-    tmp_dir.gen("foo", "foo")
+def test_pointer_build(tmp_dir: pathlib.Path):
+    (tmp_dir / "foo").write_bytes(b"foo")
     with open(tmp_dir / "foo", "rb") as fobj:
         pointer = Pointer.build(fobj)
 
     assert pointer.dump() == FOO_POINTER.decode("utf-8")
 
 
-def test_pointer_load(tmp_dir: TmpDir):
-    tmp_dir.gen("foo.lfs", FOO_POINTER)
+def test_pointer_load(tmp_dir: pathlib.Path):
+    (tmp_dir / "foo.lfs").write_bytes(FOO_POINTER)
     with open(tmp_dir / "foo.lfs", "rb") as fobj:
         pointer = Pointer.load(fobj)
     assert pointer.oid == FOO_OID
     assert pointer.size == 3
 
 
-def test_smudge(tmp_dir: TmpDir, storage: LFSStorage, mocker: MockerFixture):
-    tmp_dir.gen("foo.lfs", FOO_POINTER)
+def test_smudge(tmp_dir: pathlib.Path, storage: LFSStorage, mocker: MockerFixture):
+    (tmp_dir / "foo.lfs").write_bytes(FOO_POINTER)
     with open(tmp_dir / "foo.lfs", "rb") as fobj:
         assert smudge(storage, fobj).read() == FOO_POINTER
 
@@ -72,13 +73,14 @@ def test_smudge(tmp_dir: TmpDir, storage: LFSStorage, mocker: MockerFixture):
 
 
 @pytest.mark.usefixtures("lfs")
-def test_lfs(tmp_dir: TmpDir, scm: Git, lfs_objects: TmpDir):
+def test_lfs(tmp_dir: pathlib.Path, scm: Git, lfs_objects: pathlib.Path):
     # NOTE: scmrepo does not currently support LFS clean (writes), this writes
     # the pointer to the git odb (simulating an actual LFS clean)
-    tmp_dir.gen("foo.lfs", FOO_POINTER)
+    (tmp_dir / "foo.lfs").write_bytes(FOO_POINTER)
     scm.add(["foo.lfs"])
     scm.commit("add foo")
-    lfs_objects.gen({FOO_OID[0:2]: {FOO_OID[2:4]: {FOO_OID: "foo"}}})
+    (lfs_objects / FOO_OID[0:2] / FOO_OID[2:4]).mkdir(exist_ok=True, parents=True)
+    (lfs_objects / FOO_OID[0:2] / FOO_OID[2:4] / FOO_OID).write_bytes(b"foo")
 
     fs = scm.get_fs("HEAD")
     with fs.open("foo.lfs", "rb", raw=True) as fobj:
@@ -195,9 +197,9 @@ class LFSServerMock:
 @pytest.mark.parametrize(
     "rate_limit_header, rate_limit_value",
     [
-        ("Retry-After", lambda: "1"),
-        ("RateLimit-Reset", lambda: f"{int(time()) + 1}"),
-        ("X-RateLimit-Reset", lambda: f"{int(time()) + 1}"),
+        ("Retry-After", lambda: "0"),
+        ("RateLimit-Reset", lambda: f"{int(time())}"),
+        ("X-RateLimit-Reset", lambda: f"{int(time())}"),
     ],
 )
 @pytest.mark.filterwarnings("ignore:enable_cleanup_closed ignored.*:DeprecationWarning")
@@ -228,9 +230,9 @@ def test_rate_limit_retry(
 @pytest.mark.parametrize(
     "rate_limit_header, rate_limit_value",
     [
-        ("Retry-After", lambda: "1"),
-        ("RateLimit-Reset", lambda: f"{int(time()) + 1}"),
-        ("X-RateLimit-Reset", lambda: f"{int(time()) + 1}"),
+        ("Retry-After", lambda: "0"),
+        ("RateLimit-Reset", lambda: f"{int(time())}"),
+        ("X-RateLimit-Reset", lambda: f"{int(time())}"),
     ],
 )
 @pytest.mark.filterwarnings("ignore:enable_cleanup_closed ignored.*:DeprecationWarning")
@@ -256,9 +258,9 @@ def test_rate_limit_max_retries_batch(
 @pytest.mark.parametrize(
     "rate_limit_header, rate_limit_value",
     [
-        ("Retry-After", lambda: "1"),
-        ("RateLimit-Reset", lambda: f"{int(time()) + 1}"),
-        ("X-RateLimit-Reset", lambda: f"{int(time()) + 1}"),
+        ("Retry-After", lambda: "0"),
+        ("RateLimit-Reset", lambda: f"{int(time())}"),
+        ("X-RateLimit-Reset", lambda: f"{int(time())}"),
     ],
 )
 @pytest.mark.filterwarnings("ignore:enable_cleanup_closed ignored.*:DeprecationWarning")

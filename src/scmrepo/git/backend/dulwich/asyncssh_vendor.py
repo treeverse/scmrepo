@@ -80,7 +80,6 @@ class AsyncSSHWrapper(BaseAsyncObject):
         self.stderr = _StderrWrapper(proc.stderr, self.loop)
 
     def can_read(self) -> bool:
-        # pylint:disable=protected-access
         return self.proc.stdout._session._recv_buf_len > 0
 
     async def _read(self, n: Optional[int] = None) -> bytes:
@@ -139,7 +138,7 @@ class InteractiveSSHClient(SSHClient):
         assert self._conn is not None
         if self._keys_to_try is None:
             self._keys_to_try = []
-            options = self._conn._options  # pylint: disable=protected-access
+            options = self._conn._options
             config = options.config
             client_keys = cast("Sequence[FilePath]", config.get("IdentityFile", ()))
             if not client_keys:
@@ -197,7 +196,7 @@ class InteractiveSSHClient(SSHClient):
     def kbdint_auth_requested(self) -> "MaybeAwait[Optional[str]]":
         return ""
 
-    async def kbdint_challenge_received(  # pylint: disable=invalid-overridden-method
+    async def kbdint_challenge_received(
         self,
         name: str,
         instructions: str,
@@ -293,7 +292,7 @@ def _parse_unsupported(path: "Path") -> Iterator[str]:
 
     from asyncssh.config import SSHClientConfig
 
-    handlers = SSHClientConfig._handlers  # pylint: disable=protected-access
+    handlers = SSHClientConfig._handlers
     with open(path, encoding=locale.getpreferredencoding()) as fobj:
         for line in fobj:
             line = line.strip()

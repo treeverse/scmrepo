@@ -48,8 +48,8 @@ from urllib.parse import urlparse, urlunparse
 
 from dulwich.config import StackedConfig
 from dulwich.credentials import urlmatch_credential_sections
-from funcy import cached_property
 
+from scmrepo.compat import cached_property
 from scmrepo.exceptions import SCMError
 
 if TYPE_CHECKING:

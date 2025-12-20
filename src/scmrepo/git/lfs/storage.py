@@ -67,7 +67,7 @@ def get_storage_path(scm: "Git") -> str:
     """Return the LFS storage directory for the specified repository."""
 
     config = scm.get_config()
-    git_dir = scm._get_git_dir(scm.root_dir)  # pylint: disable=protected-access
+    git_dir = scm._get_git_dir(scm.root_dir)
     try:
         path = config.get(("lfs",), "storage")
         if os.path.isabs(path):

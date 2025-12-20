@@ -1,5 +1,6 @@
 import asyncio
 import os
+import pathlib
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Iterator
@@ -8,7 +9,6 @@ from typing import Any
 import asyncssh
 import pygit2
 import pytest
-from pytest_test_utils import TempDirFactory, TmpDir
 
 from scmrepo.git import Git
 
@@ -16,8 +16,6 @@ TEST_SSH_USER = "user"
 TEST_SSH_KEY_PATH = os.path.join(
     os.path.abspath(os.path.dirname(__file__)), f"{TEST_SSH_USER}.key"
 )
-
-# pylint: disable=redefined-outer-name
 
 
 def pytest_addoption(parser):
@@ -36,8 +34,10 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(autouse=True)
-def _isolate(tmp_dir_factory: TempDirFactory, monkeypatch: pytest.MonkeyPatch) -> None:
-    path = tmp_dir_factory.mktemp("mock")
+def _isolate(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path_factory.mktemp("mock")
     home_dir = path / "home"
     home_dir.mkdir()
 
@@ -63,7 +63,13 @@ defaultBranch=master
 
 
 @pytest.fixture
-def scm(tmp_dir: TmpDir) -> Iterator[Git]:
+def tmp_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+@pytest.fixture
+def scm(tmp_dir: pathlib.Path) -> Iterator[Git]:
     git_ = Git.init(tmp_dir)
     sig = git_.pygit2.default_signature
 
@@ -89,15 +95,15 @@ def git_backend(request) -> str:
 
 
 @pytest.fixture
-def git(tmp_dir: TmpDir, git_backend: str) -> Iterator[Git]:
+def git(tmp_dir: pathlib.Path, git_backend: str) -> Iterator[Git]:
     git_ = Git(tmp_dir, backends=[git_backend])
     yield git_
     git_.close()
 
 
 @pytest.fixture
-def remote_git_dir(tmp_dir_factory: TempDirFactory):
-    git_dir = tmp_dir_factory.mktemp("git-remote")
+def remote_git_dir(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
+    git_dir = tmp_path_factory.mktemp("git-remote")
     remote_git = Git.init(git_dir)
     remote_git.close()
     return git_dir
@@ -124,7 +130,7 @@ def docker(request: pytest.FixtureRequest):
 
 @pytest.fixture
 def ssh_conn_info(
-    docker,  # pylint: disable=unused-argument
+    docker,
 ) -> dict[str, Any]:
     conn_info = {
         "host": "127.0.0.1",
@@ -141,7 +147,7 @@ def ssh_conn_info(
                 assert result.returncode == 0
                 async with conn.start_sftp_client() as sftp:
                     assert await sftp.exists("/")
-        except Exception:  # noqa: BLE001 # pylint: disable=broad-except
+        except Exception:  # noqa: BLE001
             return False
         return True
 

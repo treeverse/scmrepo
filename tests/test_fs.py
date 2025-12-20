@@ -1,7 +1,7 @@
 import os
+import pathlib
 
 import pytest
-from pytest_test_utils import TmpDir
 
 from scmrepo.git import Git
 
@@ -23,12 +23,16 @@ def fixture_make_fs(scm: Git, git: Git):
 
 
 @pytest.mark.parametrize("raw", [True, False])
-def test_open(tmp_dir: TmpDir, scm: Git, make_fs, raw: bool, git_backend: str):
+def test_open(tmp_dir: pathlib.Path, scm: Git, make_fs, raw: bool, git_backend: str):
     if not raw and git_backend != "pygit2":
         pytest.skip()
 
-    files = tmp_dir.gen({"foo": "foo", "тест": "проверка", "data": {"lorem": "ipsum"}})
-    scm.add_commit(files, message="add")
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "тест").write_text("проверка", encoding="utf-8")
+    (tmp_dir / "data").mkdir()
+    (tmp_dir / "data" / "lorem").write_bytes(b"ipsum")
+
+    scm.add_commit(["foo", "тест", "data"], message="add")
 
     fs = make_fs()
     with fs.open("foo", mode="r", encoding="utf-8", raw=raw) as fobj:
@@ -41,9 +45,13 @@ def test_open(tmp_dir: TmpDir, scm: Git, make_fs, raw: bool, git_backend: str):
         fs.open("data", raw=raw)
 
 
-def test_exists(tmp_dir: TmpDir, scm: Git, make_fs):
+def test_exists(tmp_dir: pathlib.Path, scm: Git, make_fs):
     scm.commit("init")
-    files = tmp_dir.gen({"foo": "foo", "тест": "проверка", "data": {"lorem": "ipsum"}})
+
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "тест").write_text("проверка", encoding="utf-8")
+    (tmp_dir / "data").mkdir()
+    (tmp_dir / "data" / "lorem").write_bytes(b"ipsum")
 
     fs = make_fs()
 
@@ -54,7 +62,7 @@ def test_exists(tmp_dir: TmpDir, scm: Git, make_fs):
     assert not fs.exists("data")
     assert not fs.exists("data/lorem")
 
-    scm.add_commit(files, message="add")
+    scm.add_commit(["foo", "тест", "data"], message="add")
 
     fs = make_fs()
     assert fs.exists("/")
@@ -66,8 +74,11 @@ def test_exists(tmp_dir: TmpDir, scm: Git, make_fs):
     assert not fs.exists("non-existing-file")
 
 
-def test_isdir(tmp_dir: TmpDir, scm: Git, make_fs):
-    tmp_dir.gen({"foo": "foo", "тест": "проверка", "data": {"lorem": "ipsum"}})
+def test_isdir(tmp_dir: pathlib.Path, scm: Git, make_fs):
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "тест").write_text("проверка", encoding="utf-8")
+    (tmp_dir / "data").mkdir()
+    (tmp_dir / "data" / "lorem").write_bytes(b"ipsum")
     scm.add_commit(["foo", "data"], message="add")
 
     fs = make_fs()
@@ -79,8 +90,11 @@ def test_isdir(tmp_dir: TmpDir, scm: Git, make_fs):
     assert not fs.isdir("non-existing-file")
 
 
-def test_isfile(tmp_dir: TmpDir, scm: Git, make_fs):
-    tmp_dir.gen({"foo": "foo", "тест": "проверка", "data": {"lorem": "ipsum"}})
+def test_isfile(tmp_dir: pathlib.Path, scm: Git, make_fs):
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "тест").write_text("проверка", encoding="utf-8")
+    (tmp_dir / "data").mkdir()
+    (tmp_dir / "data" / "lorem").write_bytes(b"ipsum")
     scm.add_commit(["foo", "data"], message="add")
 
     fs = make_fs()
@@ -91,14 +105,14 @@ def test_isfile(tmp_dir: TmpDir, scm: Git, make_fs):
     assert not fs.isfile("not-existing-file")
 
 
-def test_walk(tmp_dir: TmpDir, scm: Git, make_fs):
-    tmp_dir.gen(
-        {
-            "foo": "foo",
-            "тест": "проверка",
-            "data": {"lorem": "ipsum", "subdir": {"sub": "sub"}},
-        }
-    )
+def test_walk(tmp_dir: pathlib.Path, scm: Git, make_fs):
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "тест").write_text("проверка", encoding="utf-8")
+    (tmp_dir / "data").mkdir()
+    (tmp_dir / "data" / "lorem").write_bytes(b"ipsum")
+    (tmp_dir / "data" / "subdir").mkdir()
+    (tmp_dir / "data" / "subdir" / "sub").write_bytes(b"sub")
+
     scm.add_commit("data/subdir", message="add")
     fs = make_fs()
 
@@ -128,13 +142,14 @@ def test_walk(tmp_dir: TmpDir, scm: Git, make_fs):
     )
 
 
-def test_walk_with_submodules(
-    scm: Git,
-    remote_git_dir: TmpDir,
-    make_fs,
-):
+def test_walk_with_submodules(scm: Git, remote_git_dir: pathlib.Path, make_fs):
     remote_git = Git(remote_git_dir)
-    remote_git_dir.gen({"foo": "foo", "bar": "bar", "dir": {"data": "data"}})
+
+    (remote_git_dir / "foo").write_text("foo")
+    (remote_git_dir / "bar").write_text("bar")
+    (remote_git_dir / "dir").mkdir()
+    (remote_git_dir / "dir" / "data").write_text("data")
+
     remote_git.add_commit(["foo", "bar", "dir"], message="add dir and files")
     scm.gitpython.repo.create_submodule(
         "submodule", "submodule", url=os.fspath(remote_git_dir)
@@ -153,15 +168,14 @@ def test_walk_with_submodules(
     assert set(files) == {".gitmodules", "submodule"}
 
 
-def test_ls(tmp_dir: TmpDir, scm: Git, make_fs):
-    files = tmp_dir.gen(
-        {
-            "foo": "foo",
-            "тест": "проверка",
-            "data": {"lorem": "ipsum", "subdir": {"sub": "sub"}},
-        }
-    )
-    scm.add_commit(files, message="add")
+def test_ls(tmp_dir: pathlib.Path, scm: Git, make_fs):
+    (tmp_dir / "foo").write_bytes(b"foo")
+    (tmp_dir / "тест").write_text("проверка", encoding="utf-8")
+    (tmp_dir / "data").mkdir()
+    (tmp_dir / "data" / "lorem").write_bytes(b"ipsum")
+    (tmp_dir / "data" / "subdir").mkdir()
+    (tmp_dir / "data" / "subdir" / "sub").write_bytes(b"sub")
+    scm.add_commit(["foo", "тест", "data"], message="add")
     fs = make_fs()
 
     assert fs.ls("/", detail=False) == ["/data", "/foo", "/тест"]

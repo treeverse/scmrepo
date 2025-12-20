@@ -1,7 +1,5 @@
 from typing import NamedTuple, Optional, Union
 
-from funcy import compose
-
 
 def code2desc(op_code):
     from git import RootUpdateProgress as OP  # noqa: N814, TID251
@@ -37,7 +35,7 @@ class GitProgressEvent(NamedTuple):
         op_code,
         cur_count,
         max_count=None,
-        message="",  # pylint: disable=redefined-outer-name
+        message="",
     ):
         return cls(code2desc(op_code), cur_count, max_count, message)
 
@@ -61,7 +59,10 @@ class GitProgressReporter:
 
     @staticmethod
     def wrap_fn(fn):
-        return compose(fn, GitProgressEvent.parsed_from_gitpython)
+        def wrapper(*args, **kwargs):
+            return fn(GitProgressEvent.parsed_from_gitpython(*args, **kwargs))
+
+        return wrapper
 
 
 if __name__ == "__main__":
