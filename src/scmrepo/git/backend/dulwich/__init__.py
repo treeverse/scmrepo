@@ -8,15 +8,11 @@ from collections.abc import Iterable, Iterator, Mapping
 from contextlib import closing
 from functools import partial
 from io import BytesIO, StringIO
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Optional,
-    Union,
-)
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 from dulwich.config import ConfigFile, StackedConfig
+from dulwich.objects import ObjectID
+from dulwich.refs import Ref
 from dulwich.walk import ORDER_DATE
 
 from scmrepo.compat import cached_property
@@ -276,7 +272,7 @@ class DulwichBackend(BaseGitBackend):
     def _set_default_tracking_branch(repo: "Repo"):
         from dulwich.refs import LOCAL_BRANCH_PREFIX, parse_symref_value
 
-        head_ref = repo.refs.read_ref(b"HEAD")
+        head_ref = repo.refs.read_ref(Ref(b"HEAD"))
         if head_ref is None:
             return
         try:
@@ -477,19 +473,20 @@ class DulwichBackend(BaseGitBackend):
         from dulwich.objects import Tag
 
         repo = self.repo
-        starting_points: list[bytes] = []
+        starting_points: list[ObjectID] = []
 
         # HEAD
         head_rev = self.get_ref("HEAD")
         if head_rev:
-            starting_points.append(head_rev.encode("utf-8"))
+            starting_points.append(ObjectID(head_rev.encode("utf-8")))
 
         # Branches and remotes
         for ref in repo.refs:
             if ref.startswith((b"refs/heads/", b"refs/remotes/", b"refs/tags/")):
-                if isinstance(repo.refs[ref], Tag):
-                    ref = self.repo.get_peeled(repo.refs[ref])
-                starting_points.append(repo.refs[ref])
+                oid = repo.refs[ref]
+                if ref in repo and isinstance(repo[ref], Tag):
+                    oid = self.repo.get_peeled(ref)
+                starting_points.append(oid)
 
         walker = self.repo.get_walker(include=starting_points, order=ORDER_DATE)
         return [e.commit.id.decode() for e in walker]
@@ -516,7 +513,7 @@ class DulwichBackend(BaseGitBackend):
         from dulwich.stash import Stash as DulwichStash
 
         if ref not in self._stashes:
-            self._stashes[ref] = DulwichStash(self.repo, ref=os.fsencode(ref))
+            self._stashes[ref] = DulwichStash(self.repo, ref=Ref(os.fsencode(ref)))
         return self._stashes[ref]
 
     @cached_property
@@ -542,14 +539,20 @@ class DulwichBackend(BaseGitBackend):
         message: Optional[str] = None,
         symbolic: Optional[bool] = False,
     ):
-        name_b = os.fsencode(name)
+        name_b = Ref(os.fsencode(name))
         new_ref_b = os.fsencode(new_ref)
         old_ref_b = os.fsencode(old_ref) if old_ref else None
         message_b = message.encode("utf-8") if message else None
         if symbolic:
-            return self.repo.refs.set_symbolic_ref(name_b, new_ref_b, message=message_b)
+            return self.repo.refs.set_symbolic_ref(
+                name_b, Ref(new_ref_b), message=message_b
+            )
+
         if not self.repo.refs.set_if_equals(
-            name_b, old_ref_b, new_ref_b, message=message_b
+            name_b,
+            ObjectID(old_ref_b) if old_ref_b else None,
+            ObjectID(new_ref_b),
+            message=message_b,
         ):
             raise SCMError(f"Failed to set '{name}'")
 
@@ -557,10 +560,10 @@ class DulwichBackend(BaseGitBackend):
         from dulwich.objects import Tag
         from dulwich.refs import parse_symref_value
 
-        name_b = os.fsencode(name)
+        name_b = Ref(os.fsencode(name))
         if follow:
             try:
-                ref = self.repo.refs[name_b]
+                ref = bytes(self.repo.refs[name_b])
             except KeyError:
                 ref = None
         else:
@@ -577,13 +580,13 @@ class DulwichBackend(BaseGitBackend):
         return None
 
     def remove_ref(self, name: str, old_ref: Optional[str] = None):
-        name_b = name.encode("utf-8")
-        old_ref_b = old_ref.encode("utf-8") if old_ref else None
+        name_b = Ref(name.encode("utf-8"))
+        old_ref_b = ObjectID(old_ref.encode("utf-8")) if old_ref else None
         if not self.repo.refs.remove_if_equals(name_b, old_ref_b):
             raise SCMError(f"Failed to remove '{name}'")
 
     def iter_refs(self, base: Optional[str] = None):
-        base_b = os.fsencode(base) if base else None
+        base_b = Ref(os.fsencode(base)) if base else None
         for key in self.repo.refs.keys(base=base_b):
             if base:
                 if base.endswith("/"):
@@ -642,18 +645,20 @@ class DulwichBackend(BaseGitBackend):
             raise SCMError(f"'{url}' is not a valid Git remote or URL") from exc
 
         change_result = {}
-        selected_refs: list[tuple[Optional[bytes], Optional[bytes], bool]] = []
+        selected_refs: list[tuple[Optional[Ref], Optional[Ref], bool]] = []
 
-        def update_refs(refs):
+        def update_refs(refs: dict[Ref, ObjectID]) -> dict[Ref, ObjectID]:
             from dulwich.objects import ZERO_SHA
+            from dulwich.refs import DictRefsContainer
 
             _refspecs = (
                 os.fsencode(refspecs)
                 if isinstance(refspecs, str)
                 else [os.fsencode(refspec) for refspec in refspecs]
             )
+            refs_container = DictRefsContainer(refs)  # type: ignore[arg-type]
             selected_refs.extend(
-                parse_reftuples(self.repo.refs, refs, _refspecs, force=force)
+                parse_reftuples(self.repo.refs, refs_container, _refspecs, force=force)
             )
             new_refs = {}
             for lh, rh, _ in selected_refs:
@@ -726,15 +731,15 @@ class DulwichBackend(BaseGitBackend):
         from dulwich.porcelain import DivergedBranches, check_diverged, get_remote_repo
         from dulwich.refs import DictRefsContainer
 
-        fetch_refs: list[tuple[Optional[bytes], Optional[bytes], bool]] = []
+        fetch_refs: list[tuple[Optional[Ref], Optional[Ref], bool]] = []
 
         def determine_wants(
-            remote_refs: dict[bytes, bytes],
+            remote_refs: dict[Ref, ObjectID],
             depth: Optional[int] = None,
-        ) -> list[bytes]:
+        ) -> list[ObjectID]:
             fetch_refs.extend(
                 parse_reftuples(
-                    DictRefsContainer(remote_refs),
+                    DictRefsContainer(remote_refs),  # type: ignore[arg-type]
                     self.repo.refs,
                     os.fsencode(refspecs)
                     if isinstance(refspecs, str)
@@ -965,12 +970,12 @@ class DulwichBackend(BaseGitBackend):
     def check_ref_format(self, refname: str) -> bool:
         from dulwich.refs import check_ref_format
 
-        return check_ref_format(refname.encode())
+        return check_ref_format(Ref(refname.encode()))
 
     def get_tag(self, name: str) -> Optional[Union[str, "GitTag"]]:
         from dulwich.objects import Tag
 
-        name_b = os.fsencode(f"refs/tags/{name}")
+        name_b = Ref(os.fsencode(f"refs/tags/{name}"))
         try:
             ref = self.repo.refs[name_b]
         except KeyError:
