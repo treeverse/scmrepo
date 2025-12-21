@@ -57,13 +57,13 @@ def test_git_stash_push(
     stash = Stash(scm, ref=ref)
     rev = stash.push(include_untracked=include_untracked)
     assert rev == scm.get_ref(stash.ref)
-    assert (tmp_dir / "file").read_text() == "0"
+    assert (tmp_dir / "file").read_bytes() == b"0"
     assert include_untracked != (tmp_dir / "untracked").exists()
     assert len(stash) == 1
 
     stash.apply(rev)
-    assert (tmp_dir / "file").read_text() == "1"
-    assert (tmp_dir / "untracked").read_text() == "0"
+    assert (tmp_dir / "file").read_bytes() == b"1"
+    assert (tmp_dir / "untracked").read_bytes() == b"0"
 
     parts = list(stash.ref.split("/"))
     assert (tmp_dir / ".git").joinpath(*parts).exists()
@@ -112,7 +112,7 @@ def test_git_stash_pop(tmp_dir: pathlib.Path, scm: Git, ref: Optional[str]):
     assert second == stash.pop()
     assert len(stash) == 1
     assert first == scm.get_ref(stash.ref)
-    assert (tmp_dir / "file").read_text() == "2"
+    assert (tmp_dir / "file").read_bytes() == b"2"
 
 
 @pytest.mark.parametrize("ref", [None, "refs/foo/stash"])
@@ -151,7 +151,7 @@ def test_git_stash_apply_index(tmp_dir: pathlib.Path, scm: Git, git: Git):
     stash = Stash(git)
     stash.apply(rev, reinstate_index=True)
 
-    assert (tmp_dir / "file").read_text() == "1"
+    assert (tmp_dir / "file").read_bytes() == b"1"
     staged, unstaged, untracked = scm.status()
     assert dict(staged) == {"modify": ["file"]}
     assert not dict(unstaged)

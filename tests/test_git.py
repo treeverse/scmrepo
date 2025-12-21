@@ -188,7 +188,7 @@ def test_no_commits(tmp_dir: pathlib.Path, scm: Git, git: Git):
 @pytest.mark.skip_git_backend("dulwich")
 def test_branch_revs(tmp_dir: pathlib.Path, scm: Git, git: Git):
     def _gen(i: int):
-        (tmp_dir / "file").write_text(f"{i}", encoding="utf-8")
+        (tmp_dir / "file").write_bytes(str(i).encode("ascii"))
         scm.add_commit("file", message=f"{i}")
         return scm.get_rev()
 
@@ -207,17 +207,27 @@ def test_set_ref(tmp_dir: pathlib.Path, scm: Git, git: Git):
     commit_rev = scm.get_rev()
 
     git.set_ref("refs/foo/bar", init_rev)
-    assert init_rev == (tmp_dir / ".git" / "refs" / "foo" / "bar").read_text().strip()
+    assert (
+        init_rev
+        == (tmp_dir / ".git" / "refs" / "foo" / "bar")
+        .read_text(encoding="utf-8")
+        .strip()
+    )
 
     with pytest.raises(SCMError):
         git.set_ref("refs/foo/bar", commit_rev, old_ref=commit_rev)
     git.set_ref("refs/foo/bar", commit_rev, old_ref=init_rev)
-    assert commit_rev == (tmp_dir / ".git" / "refs" / "foo" / "bar").read_text().strip()
+    assert (
+        commit_rev
+        == (tmp_dir / ".git" / "refs" / "foo" / "bar")
+        .read_text(encoding="utf-8")
+        .strip()
+    )
 
     git.set_ref("refs/foo/baz", "refs/heads/master", symbolic=True)
     assert (
         tmp_dir / ".git" / "refs" / "foo" / "baz"
-    ).read_text().strip() == "ref: refs/heads/master"
+    ).read_bytes().strip() == b"ref: refs/heads/master"
 
 
 def _write_loose_ref(scm: Git, ref: str, rev: str) -> None:
@@ -312,7 +322,7 @@ def test_push_refspecs(
 
     remote_scm.checkout("refs/foo/bar")
     assert bar_rev == remote_scm.get_rev()
-    assert (remote_git_dir / "file").read_text() == "0"
+    assert (remote_git_dir / "file").read_bytes() == b"0"
 
     assert git.push_refspecs(
         remote, ["refs/foo/bar:refs/foo/bar", "refs/foo/baz:refs/foo/baz"]
@@ -348,7 +358,7 @@ def test_fetch_refspecs(
     url = f"file://{remote_git_dir.resolve().as_posix()}"
     scm.gitpython.repo.create_remote("origin", url)
     remote_scm = Git(remote_git_dir)
-    (remote_git_dir / "file").write_text("0")
+    (remote_git_dir / "file").write_bytes(b"0")
 
     remote_scm.add_commit("file", message="init")
     init_rev = remote_scm.get_rev()
@@ -405,7 +415,7 @@ def test_iter_remote_refs(
 
     scm.gitpython.repo.create_remote("origin", url)
     remote_scm = Git(remote_git_dir)
-    (remote_git_dir / "file").write_text("0")
+    (remote_git_dir / "file").write_bytes(b"0")
     remote_scm.add_commit("file", message="init")
     remote_scm.branch("new-branch")
     remote_scm.add_commit("file", message="bar")
@@ -653,7 +663,7 @@ def test_merge(tmp_dir: pathlib.Path, scm: Git, git: Git, squash: bool):
 
     scm.gitpython.git.reset(init_rev, hard=True)
     merge_rev = git.merge(branch, commit=not squash, squash=squash, msg="merge")
-    assert (tmp_dir / "foo").read_text() == "bar"
+    assert (tmp_dir / "foo").read_bytes() == b"bar"
     if squash:
         assert merge_rev is None
         assert scm.get_rev() == init_rev
@@ -676,8 +686,8 @@ def test_checkout_index(
 
     monkeypatch.chdir(tmp_dir / "dir")
     git.checkout_index([os.path.join("..", "foo"), "baz"], force=True)
-    assert (tmp_dir / "foo").read_text() == "foo"
-    assert (tmp_dir / "dir" / "baz").read_text() == "baz"
+    assert (tmp_dir / "foo").read_bytes() == b"foo"
+    assert (tmp_dir / "dir" / "baz").read_bytes() == b"baz"
 
     monkeypatch.chdir(tmp_dir)
 
@@ -685,15 +695,15 @@ def test_checkout_index(
     (tmp_dir / "foo").write_bytes(b"baz")
     (tmp_dir / "dir" / "baz").write_bytes(b"foo")
     git.checkout_index(force=True)
-    assert (tmp_dir / "foo").read_text() == "foo"
-    assert (tmp_dir / "bar").read_text() == "bar"
-    assert (tmp_dir / "dir" / "baz").read_text() == "baz"
+    assert (tmp_dir / "foo").read_bytes() == b"foo"
+    assert (tmp_dir / "bar").read_bytes() == b"bar"
+    assert (tmp_dir / "dir" / "baz").read_bytes() == b"baz"
 
 
 @pytest.mark.skip_git_backend("dulwich")
-@pytest.mark.parametrize("strategy, expected", [("ours", "baz"), ("theirs", "bar")])
+@pytest.mark.parametrize("strategy, expected", [("ours", b"baz"), ("theirs", b"bar")])
 def test_checkout_index_conflicts(
-    tmp_dir: pathlib.Path, scm: Git, git: Git, strategy: str, expected: str
+    tmp_dir: pathlib.Path, scm: Git, git: Git, strategy: str, expected: bytes
 ):
     (tmp_dir / "file").write_bytes(b"foo")
     scm.add_commit("file", message="init")
@@ -711,7 +721,7 @@ def test_checkout_index_conflicts(
         git.merge(rev_bar, commit=False, squash=True)
 
     git.checkout_index(ours=strategy == "ours", theirs=strategy == "theirs")
-    assert (tmp_dir / "file").read_text() == expected
+    assert (tmp_dir / "file").read_bytes() == expected
 
 
 @pytest.mark.skip_git_backend("dulwich")
@@ -771,7 +781,7 @@ def test_checkout(tmp_dir: pathlib.Path, scm: Git, git: Git):
 
     git.checkout("branch", create_new=True)
     assert git.get_ref("HEAD", follow=False) == "refs/heads/branch"
-    assert (tmp_dir / "foo").read_text() == "bar"
+    assert (tmp_dir / "foo").read_bytes() == b"bar"
 
     git.checkout("master", detach=True)
     assert git.get_ref("HEAD", follow=False) == bar_rev
@@ -781,7 +791,7 @@ def test_checkout(tmp_dir: pathlib.Path, scm: Git, git: Git):
 
     git.checkout(foo_rev[:7])
     assert git.get_ref("HEAD", follow=False) == foo_rev
-    assert (tmp_dir / "foo").read_text() == "foo"
+    assert (tmp_dir / "foo").read_bytes() == b"foo"
 
 
 @pytest.mark.skip_git_backend("dulwich")
@@ -797,16 +807,16 @@ def test_reset(
     (tmp_dir / "dir" / "baz").write_bytes(b"bar")
     scm.add(["foo", os.path.join("dir", "baz")])
     git.reset()
-    assert (tmp_dir / "foo").read_text() == "bar"
-    assert (tmp_dir / "dir" / "baz").read_text() == "bar"
+    assert (tmp_dir / "foo").read_bytes() == b"bar"
+    assert (tmp_dir / "dir" / "baz").read_bytes() == b"bar"
     staged, unstaged, _ = scm.status()
     assert len(staged) == 0
     assert set(unstaged) == {"foo", "dir/baz"}
 
     scm.add(["foo", os.path.join("dir", "baz")])
     git.reset(hard=True)
-    assert (tmp_dir / "foo").read_text() == "foo"
-    assert (tmp_dir / "dir" / "baz").read_text() == "baz"
+    assert (tmp_dir / "foo").read_bytes() == b"foo"
+    assert (tmp_dir / "dir" / "baz").read_bytes() == b"baz"
     staged, unstaged, _ = scm.status()
     assert len(staged) == 0
     assert len(unstaged) == 0
@@ -820,9 +830,9 @@ def test_reset(
     git.reset(paths=[os.path.join("..", "foo"), os.path.join("baz")])
 
     monkeypatch.chdir(tmp_dir)
-    assert (tmp_dir / "foo").read_text() == "bar"
-    assert (tmp_dir / "bar").read_text() == "bar"
-    assert (tmp_dir / "dir" / "baz").read_text() == "bar"
+    assert (tmp_dir / "foo").read_bytes() == b"bar"
+    assert (tmp_dir / "bar").read_bytes() == b"bar"
+    assert (tmp_dir / "dir" / "baz").read_bytes() == b"bar"
     staged, unstaged, _ = scm.status()
     assert len(staged) == 1
     assert len(unstaged) == 2
@@ -1032,14 +1042,11 @@ def test_gitignore_should_append_newline_to_gitignore(
     bar_path = os.fspath(tmp_dir / "bar")
     gitignore = tmp_dir / ".gitignore"
 
-    gitignore.write_text("/foo")
-    assert not gitignore.read_text().endswith("\n")
+    gitignore.write_text("/foo", encoding="utf-8")
+    assert not gitignore.read_text(encoding="utf-8").endswith("\n")
 
     git.ignore(bar_path)
-    contents = gitignore.read_text()
-    assert gitignore.read_text().endswith("\n")
-
-    assert contents.splitlines() == ["/foo", "/bar"]
+    assert gitignore.read_text(encoding="utf-8") == "/foo\n/bar\n"
 
 
 @pytest.mark.skip_git_backend("dulwich")
@@ -1050,8 +1057,10 @@ def test_git_detach_head(tmp_dir: pathlib.Path, scm: Git, git: Git):
 
     with git.detach_head() as rev:
         assert init_rev == rev
-        assert init_rev == (tmp_dir / ".git" / "HEAD").read_text().strip()
-    assert (tmp_dir / ".git" / "HEAD").read_text().strip() == "ref: refs/heads/master"
+        assert (
+            init_rev == (tmp_dir / ".git" / "HEAD").read_text(encoding="utf-8").strip()
+        )
+    assert (tmp_dir / ".git" / "HEAD").read_bytes().strip() == b"ref: refs/heads/master"
 
 
 @pytest.mark.skip_git_backend("pygit2", "gitpython")
@@ -1099,7 +1108,7 @@ async def test_git_ssh(
     )
     assert git.get_ref("refs/heads/master") == rev
     scm.checkout("master")
-    assert (tmp_dir / "foo").read_text() == "foo"
+    assert (tmp_dir / "foo").read_bytes() == b"foo"
 
 
 @pytest.mark.parametrize("scheme", ["", "file://"])
@@ -1130,8 +1139,7 @@ def test_clone(
     if bare:
         assert not (target_dir / "foo").exists()
     else:
-        assert (target_dir / "foo").read_text() == "foo"
-        assert (target_dir / "foo").read_text() == "foo"
+        assert (target_dir / "foo").read_bytes() == b"foo"
     fs = target.get_fs(rev)
     with fs.open("foo", mode="r") as fobj:
         assert fobj.read().strip() == "foo"
@@ -1157,7 +1165,7 @@ def test_clone_proxy_server(
         Path(os.environ["HOME"] if "HOME" in os.environ else os.environ["USERPROFILE"])
         / ".gitconfig"
     )
-    p.write_text(BAD_PROXY_CONFIG)
+    p.write_text(BAD_PROXY_CONFIG, encoding="utf-8")
     with pytest.raises(Exception):  # noqa: PT011, B017
         git.clone(url, "dir")
 
@@ -1167,7 +1175,7 @@ proxy = {proxy_server}
 proxy = {proxy_server}
 """
 
-    p.write_text(mock_config_content)
+    p.write_text(mock_config_content, encoding="utf-8")
     git.clone(url, "dir")
 
 
@@ -1181,7 +1189,7 @@ def test_iter_remote_refs_proxy_server(
         Path(os.environ["HOME"] if "HOME" in os.environ else os.environ["USERPROFILE"])
         / ".gitconfig"
     )
-    p.write_text(BAD_PROXY_CONFIG)
+    p.write_text(BAD_PROXY_CONFIG, encoding="utf-8")
     with pytest.raises(Exception):  # noqa: PT011, B017
         list(git.iter_remote_refs(url))
 
@@ -1191,7 +1199,7 @@ proxy = {proxy_server}
 proxy = {proxy_server}
 """
 
-    p.write_text(mock_config_content)
+    p.write_text(mock_config_content, encoding="utf-8")
     res = list(git.iter_remote_refs(url))
     assert res
 
@@ -1206,7 +1214,7 @@ def test_fetch_refspecs_proxy_server(
         Path(os.environ["HOME"] if "HOME" in os.environ else os.environ["USERPROFILE"])
         / ".gitconfig"
     )
-    p.write_text(BAD_PROXY_CONFIG)
+    p.write_text(BAD_PROXY_CONFIG, encoding="utf-8")
     with pytest.raises(Exception):  # noqa: PT011, B017
         git.fetch_refspecs(url, ["refs/heads/master:refs/heads/master"])
 
@@ -1216,7 +1224,7 @@ proxy = {proxy_server}
 proxy = {proxy_server}
 """
 
-    p.write_text(mock_config_content)
+    p.write_text(mock_config_content, encoding="utf-8")
     git.fetch_refspecs(url, "refs/heads/master:refs/heads/master")
 
 

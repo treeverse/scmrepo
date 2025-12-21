@@ -145,10 +145,10 @@ def test_walk(tmp_dir: pathlib.Path, scm: Git, make_fs):
 def test_walk_with_submodules(scm: Git, remote_git_dir: pathlib.Path, make_fs):
     remote_git = Git(remote_git_dir)
 
-    (remote_git_dir / "foo").write_text("foo")
-    (remote_git_dir / "bar").write_text("bar")
+    (remote_git_dir / "foo").write_bytes(b"foo")
+    (remote_git_dir / "bar").write_bytes(b"bar")
     (remote_git_dir / "dir").mkdir()
-    (remote_git_dir / "dir" / "data").write_text("data")
+    (remote_git_dir / "dir" / "data").write_bytes(b"data")
 
     remote_git.add_commit(["foo", "bar", "dir"], message="add dir and files")
     scm.gitpython.repo.create_submodule(
