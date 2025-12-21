@@ -26,4 +26,4 @@ def test_clone_shallow(tmp_dir: pathlib.Path):
     repo = Git.clone(url, "dir", shallow_branch=shallow_branch)
     shallow_file = tmp_dir / "dir" / ".git" / "shallow"
     assert shallow_file.exists()
-    assert repo.get_rev() in shallow_file.read_text().splitlines()
+    assert repo.get_rev() in shallow_file.read_text(encoding="utf-8").splitlines()
