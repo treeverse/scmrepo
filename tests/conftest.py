@@ -76,8 +76,10 @@ def scm(tmp_dir: pathlib.Path) -> Iterator[Git]:
     assert sig.email == "dvctester@example.com"
     assert sig.name == "DVC Tester"
 
-    yield git_
-    git_.close()
+    try:
+        yield git_
+    finally:
+        git_.close()
 
 
 backends = ["gitpython", "dulwich", "pygit2"]
@@ -97,8 +99,10 @@ def git_backend(request) -> str:
 @pytest.fixture
 def git(tmp_dir: pathlib.Path, git_backend: str) -> Iterator[Git]:
     git_ = Git(tmp_dir, backends=[git_backend])
-    yield git_
-    git_.close()
+    try:
+        yield git_
+    finally:
+        git_.close()
 
 
 @pytest.fixture
