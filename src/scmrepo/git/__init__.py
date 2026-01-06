@@ -301,7 +301,6 @@ class Git(Base):
         backends: Iterable[str] = kwargs.pop("backends", self.backends)
         for key in backends:
             if self._last_backend is not None and key != self._last_backend:
-                self.backends[self._last_backend].close()
                 self._last_backend = None
             try:
                 backend = self.backends[key]
