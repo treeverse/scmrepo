@@ -912,6 +912,7 @@ class DulwichBackend(BaseGitBackend):
     def status(
         self, ignored: bool = False, untracked_files: str = "all"
     ) -> tuple[Mapping[str, Iterable[str]], Iterable[str], Iterable[str]]:
+        from dulwich import __version__ as dulwich_version
         from dulwich.porcelain import Error
         from dulwich.porcelain import status as git_status
 
@@ -922,14 +923,22 @@ class DulwichBackend(BaseGitBackend):
         except Error as exc:
             raise SCMError("Git status failed") from exc
 
+        def decode_path(name: bytes) -> str:
+            path_str = os.fsdecode(name)
+            if dulwich_version >= (0, 25, 1) and os.sep != "/":
+                # replace OS path separator with git/unix separator
+                # for consistency with other backends
+                path_str = path_str.replace(os.sep, "/")
+            return path_str
+
         return (
             {
-                status: [os.fsdecode(name) for name in paths]
+                status: [decode_path(name) for name in paths]
                 for status, paths in staged.items()
                 if paths
             },
-            [os.fsdecode(name) for name in unstaged],
-            [os.fsdecode(name) for name in untracked],
+            [decode_path(name) for name in unstaged],
+            [decode_path(name) for name in untracked],
         )
 
     def _reset(self) -> None:
