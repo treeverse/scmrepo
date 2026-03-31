@@ -143,7 +143,7 @@ class InteractiveSSHClient(SSHClient):
             client_keys = cast("Sequence[FilePath]", config.get("IdentityFile", ()))
             if not client_keys:
                 client_keys = [
-                    os.path.expanduser(os.path.join("~", ".ssh", path))
+                    os.path.expanduser(os.path.join("~", ".ssh", path))  # noqa: ASYNC240
                     for path, cond in _DEFAULT_KEY_FILES
                     if cond
                 ]

@@ -137,7 +137,7 @@ class GitCredentialHelper(CredentialHelper):
             # If the helper cannot be found in PATH, it might be
             # a C git helper in GIT_EXEC_PATH
             git_exec_path = subprocess.check_output(
-                ("git", "--exec-path"),
+                ("git", "--exec-path"),  # noqa: S607
                 text=True,
             ).strip()
             if shutil.which(executable, path=git_exec_path):
