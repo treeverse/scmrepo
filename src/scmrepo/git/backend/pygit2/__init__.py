@@ -118,7 +118,8 @@ class Pygit2Config(Config):
         return ".".join((*section, name))
 
     def get(self, section: tuple[str, ...], name: str) -> str:
-        return self._config[self._key(section, name)]
+        k = self._config[self._key(section, name)]
+        return "true" if k is None else k
 
     def get_bool(self, section: tuple[str, ...], name: str) -> bool:
         from pygit2 import GitError
