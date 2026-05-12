@@ -43,7 +43,7 @@ Source = "https://github.com/treeverse/scmrepo"
 [project.optional-dependencies]
 tests = [
     "aioresponses>=0.7,<0.8",
-    "paramiko>=3.4.0,<5",
+    "paramiko>=3.4.0,<6",
     "pytest>=7,<10",
     "pytest-asyncio>=0.23.2,<2",
     "pytest-cov>=4.1.0",
