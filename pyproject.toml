@@ -52,7 +52,7 @@ tests = [
     "proxy.py",
 ]
 dev = [
-    "mypy==1.19.1",
+    "mypy==2.3.0",
     "scmrepo[tests]",
     "types-certifi",
     "types-mock",
