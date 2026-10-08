@@ -289,8 +289,11 @@ class Pygit2Backend(BaseGitBackend):
                 repo = clone_repository(
                     url, os.fspath(to_path), callbacks=cb, bare=bare
                 )
-                if mirror:
-                    cls._set_mirror(repo, progress=progress)
+                try:
+                    if mirror:
+                        cls._set_mirror(repo, progress=progress)
+                finally:
+                    repo.free()
         except GitError as exc:
             raise CloneError(url, os.fsdecode(to_path)) from exc
 
