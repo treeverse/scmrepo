@@ -1,6 +1,7 @@
 import locale
 import logging
 import os
+import re
 import stat
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
@@ -681,7 +682,9 @@ class Pygit2Backend(BaseGitBackend):
         except KeyError as exc:
             raise SCMError(f"'{url}' is not a valid Git remote or URL") from exc
 
-        if os.name == "nt":
+        # libgit2 needs a native path for the legacy file://C:/... spelling.
+        # Leave standard file:///C:/... URLs intact so it can decode them.
+        if os.name == "nt" and re.match(r"file://[a-zA-Z]:", url):
             url = url.removeprefix("file://")
         remote = self.repo.remotes.create_anonymous(url)
         assert remote.url is not None
