@@ -43,6 +43,9 @@ Source = "https://github.com/treeverse/scmrepo"
 
 [project.optional-dependencies]
 tests = [
+    # aioresponses doesn't support aiohttp 3.14 yet:
+    # https://github.com/pnuckowski/aioresponses/issues/289
+    "aiohttp<3.14",
     "aioresponses>=0.7,<0.8",
     "paramiko>=3.4.0,<5",
     "pytest>=7,<10",
