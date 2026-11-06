@@ -10,6 +10,7 @@ from typing import (
     Callable,
     Optional,
     Union,
+    cast,
 )
 from urllib.parse import urlparse
 
@@ -133,7 +134,14 @@ class Pygit2Config(Config):
         from pygit2 import GitError
 
         try:
-            yield from self._config.get_multivar(self._key(section, name))
+            # Before pygit2 1.21 the stubs say iterating yields ConfigEntry,
+            # though it yields values; since 1.21 a valueless entry is None
+            values = cast(
+                "Iterable[Optional[str]]",
+                self._config.get_multivar(self._key(section, name)),
+            )
+            for value in values:
+                yield "true" if value is None else value
         except GitError as exc:
             raise ValueError("invalid multivar config entry") from exc
 
@@ -188,10 +196,13 @@ class Pygit2Backend(BaseGitBackend):
         from pygit2.enums import ObjectType
 
         ref: Union[Reference, Tag]
-        commit, ref = self.repo.resolve_refish(refish)
+        obj, ref = self.repo.resolve_refish(refish)
+        # pygit2's stubs claim a Commit, but a tag object's id resolves to the
+        # Tag itself
+        commit = cast("Union[Commit, Tag]", obj)
         if isinstance(commit, Tag):
             ref = commit
-            commit = commit.peel(ObjectType.COMMIT)
+            return commit.peel(ObjectType.COMMIT), ref
         return commit, ref
 
     @property
@@ -351,8 +362,7 @@ class Pygit2Backend(BaseGitBackend):
 
         with self.release_odb_handles():
             if create_new:
-                _commit = self.repo.revparse_single("HEAD")
-                assert isinstance(_commit, Commit)
+                _commit = self.repo.revparse_single("HEAD").peel(Commit)
                 new_branch = self.repo.branches.local.create(branch, _commit)
                 self.repo.checkout(new_branch, strategy=strategy)
             else:
