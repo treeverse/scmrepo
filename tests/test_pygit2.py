@@ -1,3 +1,4 @@
+import gc
 import os
 import pathlib
 
@@ -5,9 +6,63 @@ import pygit2
 import pytest
 from pytest_mock import MockerFixture
 
-from scmrepo.exceptions import SCMError
+from scmrepo.exceptions import CloneError, SCMError
 from scmrepo.git import Git
 from scmrepo.git.backend.pygit2 import Pygit2Backend
+
+
+@pytest.mark.parametrize(
+    "bare,mirror,fail_mirror",
+    [
+        (False, False, False),
+        (True, False, False),
+        (True, True, False),
+        (True, True, True),
+    ],
+    ids=["worktree", "bare", "mirror", "failed-mirror"],
+)
+def test_pygit_clone_releases_pack_handles(
+    tmp_dir: pathlib.Path,
+    scm: Git,
+    tmp_path_factory: pytest.TempPathFactory,
+    mocker: MockerFixture,
+    bare: bool,
+    mirror: bool,
+    fail_mirror: bool,
+):
+    (tmp_dir / "foo").write_bytes(b"contents\n" * 1000)
+    scm.add_commit("foo", message="init")
+    scm.gitpython.git.gc()
+    destination = tmp_path_factory.mktemp("packed-clone")
+
+    # The clone must release its handles without waiting for cyclic GC.
+    gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        if fail_mirror:
+            mocker.patch.object(
+                Pygit2Backend,
+                "_set_mirror",
+                side_effect=pygit2.GitError("mirror setup failed"),
+            )
+            with pytest.raises(CloneError):
+                Pygit2Backend.clone(str(tmp_dir), destination, bare=bare, mirror=mirror)
+        else:
+            Pygit2Backend.clone(str(tmp_dir), destination, bare=bare, mirror=mirror)
+            if not bare:
+                assert (destination / "foo").read_text() == "contents\n" * 1000
+
+        git_dir = destination if bare else destination / ".git"
+        packs = list((git_dir / "objects" / "pack").glob("*.pack"))
+        assert packs
+        for pack in packs:
+            # Remove Git's read-only attribute before checking the handle lock.
+            pack.chmod(0o600)
+            pack.unlink()
+    finally:
+        if gc_was_enabled:
+            gc.enable()
+        gc.collect()
 
 
 @pytest.mark.parametrize("use_sha", [True, False])
