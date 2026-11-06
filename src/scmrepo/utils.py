@@ -46,6 +46,11 @@ def relpath(path, start=os.curdir):
 
         path = resolve_network_drive_windows(os.path.abspath(path))
         start = resolve_network_drive_windows(start)
-        if not os.path.commonprefix([start, path]):
+
+    try:
+        return os.path.relpath(path, start)
+    except ValueError:
+        # Windows: no relative path between different drives or UNC shares
+        if os.name == "nt":
             return path
-    return os.path.relpath(path, start)
+        raise
