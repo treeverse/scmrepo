@@ -186,15 +186,16 @@ class Pygit2Backend(BaseGitBackend):
     def _resolve_refish(
         self, refish: str
     ) -> tuple["Commit", Union["Reference", "Tag"]]:
-        from pygit2 import Commit, Tag
+        from pygit2 import Tag
         from pygit2.enums import ObjectType
 
         ref: Union[Reference, Tag]
-        obj, ref = self.repo.resolve_refish(refish)
-        # a tag object's id resolves to the Tag itself, not to a Commit
-        if obj.type == ObjectType.TAG:
-            ref = obj.peel(Tag)
-        return obj.peel(Commit), ref
+        commit, ref = self.repo.resolve_refish(refish)
+        # pygit2>=1.21's stubs wrongly say a Tag is never returned
+        if isinstance(commit, Tag):  # type: ignore[unreachable]
+            ref = commit  # type: ignore[unreachable]
+            commit = commit.peel(ObjectType.COMMIT)
+        return commit, ref
 
     @property
     def default_signature(self) -> "Signature":
