@@ -133,7 +133,9 @@ class Pygit2Config(Config):
         from pygit2 import GitError
 
         try:
-            yield from self._config.get_multivar(self._key(section, name))
+            for value in self._config.get_multivar(self._key(section, name)):
+                # pygit2<1.21's stubs wrongly say this yields ConfigEntry
+                yield "true" if value is None else value  # type: ignore[misc]
         except GitError as exc:
             raise ValueError("invalid multivar config entry") from exc
 
@@ -189,8 +191,9 @@ class Pygit2Backend(BaseGitBackend):
 
         ref: Union[Reference, Tag]
         commit, ref = self.repo.resolve_refish(refish)
-        if isinstance(commit, Tag):
-            ref = commit
+        # pygit2>=1.21's stubs wrongly say a Tag is never returned
+        if isinstance(commit, Tag):  # type: ignore[unreachable]
+            ref = commit  # type: ignore[unreachable]
             commit = commit.peel(ObjectType.COMMIT)
         return commit, ref
 
@@ -351,8 +354,7 @@ class Pygit2Backend(BaseGitBackend):
 
         with self.release_odb_handles():
             if create_new:
-                _commit = self.repo.revparse_single("HEAD")
-                assert isinstance(_commit, Commit)
+                _commit = self.repo.revparse_single("HEAD").peel(Commit)
                 new_branch = self.repo.branches.local.create(branch, _commit)
                 self.repo.checkout(new_branch, strategy=strategy)
             else:
