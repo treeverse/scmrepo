@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import stat
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -14,9 +14,9 @@ def S_ISGITLINK(m: int) -> bool:  # noqa: N802
     return stat.S_IFMT(m) == S_IFGITLINK
 
 
-def _to_datetime(time: int, offset: int) -> datetime.datetime:
-    tz = datetime.timezone(datetime.timedelta(seconds=offset))
-    return datetime.datetime.fromtimestamp(time, tz=tz)
+def _to_datetime(time: int, offset: int) -> dt.datetime:
+    tz = dt.timezone(dt.timedelta(seconds=offset))
+    return dt.datetime.fromtimestamp(time, tz=tz)
 
 
 class GitObject(ABC):
@@ -178,11 +178,11 @@ class GitCommit:
     author_time_offset: int
 
     @property
-    def commit_datetime(self) -> datetime.datetime:
+    def commit_datetime(self) -> dt.datetime:
         return _to_datetime(self.commit_time, self.commit_time_offset)
 
     @property
-    def author_datetime(self) -> datetime.datetime:
+    def author_datetime(self) -> dt.datetime:
         return _to_datetime(self.author_time, self.author_time_offset)
 
 
@@ -198,5 +198,5 @@ class GitTag:
     message: str
 
     @property
-    def tag_datetime(self) -> datetime.datetime:
+    def tag_datetime(self) -> dt.datetime:
         return _to_datetime(self.tag_time, self.tag_time_offset)
