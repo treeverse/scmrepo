@@ -10,6 +10,47 @@ from scmrepo.git import Git
 from scmrepo.git.backend.pygit2 import Pygit2Backend
 
 
+@pytest.mark.parametrize("use_remote", [False, True])
+@pytest.mark.parametrize(
+    "url_type",
+    [
+        "path",
+        "uri",
+        "localhost",
+        pytest.param(
+            "legacy",
+            marks=pytest.mark.skipif(
+                os.name != "nt", reason="Windows drive-letter URL"
+            ),
+        ),
+    ],
+)
+def test_pygit_fetch_file_urls(
+    scm: Git,
+    tmp_path_factory: pytest.TempPathFactory,
+    url_type: str,
+    use_remote: bool,
+):
+    remote_dir = tmp_path_factory.mktemp("file-remote") / "spaces # 100% ü"
+    with Git.init(remote_dir) as remote_scm:
+        (remote_dir / "file").write_text("contents")
+        remote_scm.add_commit("file", message="init")
+        revision = remote_scm.get_rev()
+
+    url = {
+        "path": str(remote_dir),
+        "uri": remote_dir.as_uri(),
+        "localhost": remote_dir.as_uri().replace("file:///", "file://localhost/"),
+        "legacy": f"file://{remote_dir.as_posix()}",
+    }[url_type]
+    if use_remote:
+        scm.pygit2.repo.remotes.create("origin", url)
+        url = "origin"
+
+    scm.pygit2.fetch_refspecs(url, "refs/heads/master:refs/heads/fetched")
+    assert scm.get_ref("refs/heads/fetched") == revision
+
+
 @pytest.mark.parametrize("use_sha", [True, False])
 def test_pygit_resolve_refish(tmp_dir: pathlib.Path, scm: Git, use_sha: str):
     backend = Pygit2Backend(tmp_dir)
