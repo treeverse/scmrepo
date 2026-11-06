@@ -11,6 +11,7 @@ from typing import Any, Optional
 import pytest
 from asyncssh import SFTPClient
 from asyncssh.connection import SSHClientConnection
+from dulwich import __version__ as dulwich_version
 from dulwich.client import LocalGitClient
 from git import Repo as GitPythonRepo
 from proxy import TestCase as ProxyTestCase
@@ -980,11 +981,10 @@ def test_ignored_dir_unignored_subdirs(tmp_dir: pathlib.Path, scm: Git, git: Git
     assert git.is_ignored(tmp_dir / "data" / "non_existent.json")
 
     assert not git.is_ignored(f"data{os.sep}")
-    # git check-ignore would now mark "data/raw" as ignored
-    # after detecting it's a directory in the file system;
-    # instead, we rely on the trailing separator to determine if handling a
-    # a directory - for consistency between existent and non-existent paths
-    assert git.is_ignored(os.path.join("data", "raw"))
+    # Like git, dulwich>=1.2.15 stats the work tree, so an existing directory
+    # is recognised without a trailing separator; older versions treat the
+    # path as a file.
+    assert git.is_ignored(os.path.join("data", "raw")) is (dulwich_version < (1, 2, 15))
     assert not git.is_ignored(os.path.join("data", f"raw{os.sep}"))
 
     assert git.is_ignored(os.path.join("data", "non_existent"))
