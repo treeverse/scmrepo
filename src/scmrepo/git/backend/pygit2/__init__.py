@@ -10,7 +10,6 @@ from typing import (
     Callable,
     Optional,
     Union,
-    cast,
 )
 from urllib.parse import urlparse
 
@@ -134,14 +133,9 @@ class Pygit2Config(Config):
         from pygit2 import GitError
 
         try:
-            # Before pygit2 1.21 the stubs say iterating yields ConfigEntry,
-            # though it yields values; since 1.21 a valueless entry is None
-            values = cast(
-                "Iterable[Optional[str]]",
-                self._config.get_multivar(self._key(section, name)),
-            )
-            for value in values:
-                yield "true" if value is None else value
+            for value in self._config.get_multivar(self._key(section, name)):
+                # pygit2<1.21's stubs wrongly say this yields ConfigEntry
+                yield "true" if value is None else value  # type: ignore[misc]
         except GitError as exc:
             raise ValueError("invalid multivar config entry") from exc
 
@@ -192,18 +186,15 @@ class Pygit2Backend(BaseGitBackend):
     def _resolve_refish(
         self, refish: str
     ) -> tuple["Commit", Union["Reference", "Tag"]]:
-        from pygit2 import Tag
+        from pygit2 import Commit, Tag
         from pygit2.enums import ObjectType
 
         ref: Union[Reference, Tag]
         obj, ref = self.repo.resolve_refish(refish)
-        # pygit2's stubs claim a Commit, but a tag object's id resolves to the
-        # Tag itself
-        commit = cast("Union[Commit, Tag]", obj)
-        if isinstance(commit, Tag):
-            ref = commit
-            return commit.peel(ObjectType.COMMIT), ref
-        return commit, ref
+        # a tag object's id resolves to the Tag itself, not to a Commit
+        if obj.type == ObjectType.TAG:
+            ref = obj.peel(Tag)
+        return obj.peel(Commit), ref
 
     @property
     def default_signature(self) -> "Signature":
