@@ -32,6 +32,10 @@ class _Tqdm(tqdm):
         "miniters": 1,
     }
 
+    # __init__ always sets these, narrower than tqdm's own types
+    postfix: dict[str, Any]
+    bar_format: str
+
     def __init__(
         self,
         iterable=None,
